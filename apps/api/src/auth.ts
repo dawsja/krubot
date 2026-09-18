@@ -108,6 +108,15 @@ export function oidcCallbackUrl(): string {
   return `${new URL(appUrl()).origin}/api/auth/callback/${OIDC_PROVIDER_ID}`;
 }
 
+/**
+ * Where the provider sends the browser after signing out of it: the sign-in
+ * page. Register it with the provider as a post-logout (sign-out) redirect
+ * URI; without it the provider keeps you on its own sign-out page.
+ */
+export function oidcLogoutUrl(): string {
+  return `${new URL(appUrl()).origin}/login`;
+}
+
 /** The generic OAuth entry for the admin's OIDC provider, while it is set up and on. */
 function oidcConfig(): GenericOAuthConfig[] {
   const provider = oidcProvider();
@@ -122,6 +131,8 @@ function oidcConfig(): GenericOAuthConfig[] {
       scopes: provider.scopes,
       pkce: true,
       redirectURI: oidcCallbackUrl(),
+      // Signing out of Kru Bot signs out of the provider too, then comes back to the sign-in page.
+      postLogoutRedirectURI: oidcLogoutUrl(),
       // A profile without a name still gets one: what the provider calls the person.
       mapProfileToUser: (profile) => ({
         name: (typeof profile.name === "string" && profile.name.trim()) || (typeof profile.preferred_username === "string" && profile.preferred_username.trim()) || profile.email?.split("@")[0] || "Someone",

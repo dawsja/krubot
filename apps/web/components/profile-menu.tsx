@@ -11,7 +11,10 @@ import { authClient } from "@/lib/auth/client";
 export function ProfileMenu({ trigger, children, side = "top", align = "start" }: { trigger: ReactElement; children: ReactNode; side?: "top" | "bottom"; align?: "start" | "end" }) {
   const router = useRouter();
   async function signOut() {
-    await authClient.signOut();
+    const { data } = await authClient.signOut();
+    // Signed in with the OIDC provider: the client is already on its way to the
+    // provider's sign-out, which comes back to /login.
+    if (data?.redirect && data.url) return;
     router.replace("/login");
     router.refresh();
   }

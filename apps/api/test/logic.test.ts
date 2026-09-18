@@ -75,3 +75,37 @@ describe("LLM proxy", () => {
     expect(upstreamUrl("https://api.z.ai/api/anthropic", "/v1/messages", "").href).toBe("https://api.z.ai/api/anthropic/v1/messages");
   });
 });
+
+describe("mobile sign-in", () => {
+  test("a code redeems once, and only with the verifier behind its challenge", async () => {
+    const { challengeFor, isChallenge, issueCode, redeemCode } = await import("../src/mobile-sign-in.ts");
+    const verifier = "the-apps-verifier-that-never-leaves-the-phone";
+    const challenge = challengeFor(verifier);
+    expect(isChallenge(challenge)).toBe(true);
+    expect(isChallenge("short")).toBe(false);
+
+    const code = issueCode("session.value", challenge);
+    expect(redeemCode(code, "someone-elses-verifier")).toBeNull();
+    // A wrong try spends the code.
+    expect(redeemCode(code, verifier)).toBeNull();
+
+    const again = issueCode("session.value", challenge);
+    expect(redeemCode(again, verifier)).toBe("session.value");
+    expect(redeemCode(again, verifier)).toBeNull();
+  });
+
+  test("an old code is refused", async () => {
+    const { challengeFor, issueCode, redeemCode } = await import("../src/mobile-sign-in.ts");
+    const code = issueCode("s", challengeFor("v"), Date.now() - 3 * 60 * 1000);
+    expect(redeemCode(code, "v")).toBeNull();
+  });
+
+  test("next stays on this server", async () => {
+    const { safePath } = await import("../src/mobile-sign-in.ts");
+    expect(safePath("/app/t/1")).toBe("/app/t/1");
+    expect(safePath("//evil.example")).toBe("/app");
+    expect(safePath("/\\evil.example")).toBe("/app");
+    expect(safePath("https://evil.example")).toBe("/app");
+    expect(safePath(undefined)).toBe("/app");
+  });
+});

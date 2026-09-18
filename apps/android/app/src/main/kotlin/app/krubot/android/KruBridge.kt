@@ -31,6 +31,10 @@ class KruBridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun requestNotifications() = activity.fromTrustedPage { askForNotifications() }
 
+    /** Sign in with the OIDC provider in the phone's browser; the app opens `next` once signed in. */
+    @JavascriptInterface
+    fun signIn(next: String?) = activity.fromTrustedPage { startSignIn(next) }
+
     /** A link in the phone's browser rather than in the app. */
     @JavascriptInterface
     fun openExternal(url: String?) = activity.fromTrustedPage { if (url != null) openOutside(url) }

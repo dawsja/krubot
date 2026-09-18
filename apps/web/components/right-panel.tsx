@@ -1,9 +1,9 @@
 "use client";
 
-import { APPROVAL_LEVEL_LABELS, type Bot, type Routine, type Thread } from "@krubot/shared";
+import { APPROVAL_LEVEL_LABELS, type Bot, type McpServer, mcpToolkit, type Routine, type Thread } from "@krubot/shared";
 import { Clock, Monitor, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { appName, AppIcon } from "@/components/app-icons";
+import { appName, AppIcon, McpIcon } from "@/components/app-icons";
 import { BotAvatar } from "@/components/bot-avatar";
 import { useLiveEvents } from "@/components/hq/live-events";
 import { RoutineDialog } from "@/components/routine-dialog";
@@ -92,12 +92,22 @@ export function RightPanelContent({ thread, bot, working }: { thread: Thread; bo
   const { bots, admin } = useStore();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
+  const [servers, setServers] = useState<McpServer[]>([]);
+  const usesMcp = Boolean(bot?.toolkits.some((t) => t.startsWith(mcpToolkit(""))));
 
   const load = useCallback(async () => {
     if (!bot) return;
     const data = await api<{ routines: Routine[] }>(`/api/routines?bot=${bot.id}`).catch(() => null);
     if (data) setRoutines(data.routines);
   }, [bot]);
+
+  // The bot's own MCP servers show by name, as in its profile.
+  useEffect(() => {
+    if (!usesMcp) return;
+    void api<{ servers: McpServer[] }>("/api/mcp-servers")
+      .then((d) => setServers(d.servers))
+      .catch(() => undefined);
+  }, [usesMcp, bot?.toolkits]);
 
   useEffect(() => {
     void Promise.resolve().then(load);
@@ -180,12 +190,17 @@ export function RightPanelContent({ thread, bot, working }: { thread: Thread; bo
         </dl>
         {bot.toolkits.length ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {bot.toolkits.map((t) => (
-              <Badge key={t} variant="outline" className="gap-1">
-                <AppIcon toolkit={t} size={12} />
-                {appName(t)}
-              </Badge>
-            ))}
+            {bot.toolkits.map((t) => {
+              const server = servers.find((s) => mcpToolkit(s.id) === t);
+              // A server that isn't in your list any more (removed) has nothing to show.
+              if (!server && t.startsWith(mcpToolkit(""))) return null;
+              return (
+                <Badge key={t} variant="outline" className="gap-1">
+                  {server ? <McpIcon id={server.id} transport={server.transport} size={12} /> : <AppIcon toolkit={t} size={12} />}
+                  {server ? server.name : appName(t)}
+                </Badge>
+              );
+            })}
           </div>
         ) : null}
         <Button variant="outline" size="sm" onClick={() => openShellDialog({ kind: "edit-bot", botId: bot.id })} className="mt-3 w-full">

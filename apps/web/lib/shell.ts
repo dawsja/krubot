@@ -21,6 +21,8 @@ export type KruMobile = {
   /** Asks the phone; a `kru:notifications` event on window follows the answer. */
   requestNotifications(): void;
   openExternal(url: string): void;
+  /** Signs in with the OIDC provider in the phone's browser, then opens `next`. Absent in older versions of the app. */
+  signIn?(next: string): void;
   /** The page's background and whether it is dark, for the bars around it. */
   setTheme(background: string, dark: boolean): void;
 };

@@ -48,6 +48,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Back from a sign-in with the OIDC provider in the browser (MOBILE_SIGN_IN_CALLBACK in packages/shared). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="krubot" android:host="sign-in" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

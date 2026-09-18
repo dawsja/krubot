@@ -16,20 +16,20 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { api, del, patch } from "@/lib/api";
 
-type Reply = { oidc: OidcSettings; callbackUrl: string };
+type Reply = { oidc: OidcSettings; callbackUrl: string; logoutUrl: string };
 
 /**
  * Settings → Authentication → OIDC: the provider people sign in with (Pocket ID,
  * Authentik, Keycloak, anything with discovery). The client secret goes in
- * once and never comes back out; the redirect URL is what to register at
- * the provider.
+ * once and never comes back out; the redirect and sign-out URLs are what
+ * to register at the provider.
  */
 export function OidcCard() {
   const [state, setState] = useState<Reply | null>(null);
   const [form, setForm] = useState({ name: "", issuer: "", clientId: "", clientSecret: "", scopes: OIDC_DEFAULT_SCOPES });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"callback" | "logout" | null>(null);
 
   const load = useCallback(async () => {
     const data = await api<Reply>("/api/oidc").catch(() => null);
@@ -71,12 +71,12 @@ export function OidcCard() {
     toast.add({ type: "info", title: "Secret forgotten.", description: "The provider is off until a new one is saved." });
   }
 
-  async function copy() {
+  async function copy(which: "callback" | "logout") {
     if (!state) return;
     try {
-      await navigator.clipboard.writeText(state.callbackUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1_500);
+      await navigator.clipboard.writeText(which === "callback" ? state.callbackUrl : state.logoutUrl);
+      setCopied(which);
+      window.setTimeout(() => setCopied(null), 1_500);
     } catch {
       toast.add({ type: "error", title: "Couldn't copy. Select the address and copy it yourself." });
     }
@@ -102,12 +102,24 @@ export function OidcCard() {
           <InputGroup>
             <InputGroupInput id="oidc-callback" readOnly value={state.callbackUrl} className="font-mono text-[13px]" onFocus={(e) => e.currentTarget.select()} />
             <InputGroupAddon align="inline-end">
-              <InputGroupButton size="icon-sm" aria-label="Copy the redirect URL" onClick={() => void copy()}>
-                {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+              <InputGroupButton size="icon-sm" aria-label="Copy the redirect URL" onClick={() => void copy("callback")}>
+                {copied === "callback" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
               </InputGroupButton>
             </InputGroupAddon>
           </InputGroup>
           <FieldDescription>Register this as the client&apos;s redirect (callback) URL at the provider. It uses the address in APP_URL, so set that to how people reach Kru Bot.</FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="oidc-logout">Sign-out URL</FieldLabel>
+          <InputGroup>
+            <InputGroupInput id="oidc-logout" readOnly value={state.logoutUrl} className="font-mono text-[13px]" onFocus={(e) => e.currentTarget.select()} />
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton size="icon-sm" aria-label="Copy the sign-out URL" onClick={() => void copy("logout")}>
+                {copied === "logout" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+              </InputGroupButton>
+            </InputGroupAddon>
+          </InputGroup>
+          <FieldDescription>Register this as the post-logout (sign-out) redirect URL. Signing out of Kru Bot signs out of the provider too, then comes back here. Pocket ID calls it a logout callback URL.</FieldDescription>
         </Field>
         <form onSubmit={save}>
           <FieldGroup className="gap-4">

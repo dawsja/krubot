@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.util.Base64
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.webkit.CookieManager
@@ -41,6 +42,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import java.security.SecureRandom
 import org.json.JSONObject
 import kotlin.math.max
 
@@ -94,6 +97,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         server = Prefs.server(this)
+        if (finishSignIn(intent)) return
         val target = intent?.getStringExtra(Notifications.EXTRA_URL)
         if (server != null) showServer(target ?: "/app") else showConnect(null, null)
     }
@@ -101,6 +105,7 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (finishSignIn(intent)) return
         // A tapped notification: the conversation it came from.
         val url = intent.getStringExtra(Notifications.EXTRA_URL) ?: return
         if (server != null) showServer(url)
@@ -252,6 +257,47 @@ class MainActivity : AppCompatActivity() {
         binding.connect.visibility = View.GONE
         web.visibility = View.VISIBLE
         if (path != null) web.loadUrl(Uri.parse(origin).buildUpon().encodedPath(null).build().toString().trimEnd('/') + path)
+    }
+
+    // ---------- signing in with the provider ----------
+
+    /**
+     * The provider's sign-in runs in the phone's browser: a WebView can't use
+     * passkeys, and many providers refuse to sign in inside one. The browser
+     * gets only a hash of a verifier kept here; the API sends back a one-time
+     * code that is good only with it (see apps/api/src/mobile-sign-in.ts).
+     */
+    fun startSignIn(next: String?) {
+        val origin = server ?: return
+        val verifier = Base64.encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) }, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+        val challenge = Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()), Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+        Prefs.setPendingSignIn(this, verifier, next?.takeIf { it.startsWith("/") && !it.startsWith("//") } ?: "/app")
+        openOutside("$origin/api/mobile-sign-in/start?challenge=$challenge")
+    }
+
+    /** `krubot://sign-in?code=…` from the browser: the code and the verifier become this app's session. */
+    private fun finishSignIn(intent: Intent?): Boolean {
+        val data = intent?.data ?: return false
+        if (data.scheme != "krubot" || data.host != "sign-in") return false
+        if (server == null) {
+            showConnect(null, null)
+            return true
+        }
+        val pending = Prefs.takePendingSignIn(this)
+        val code = data.getQueryParameter("code")
+        if (pending == null || code == null) {
+            showServer("/login?error=oidc")
+            return true
+        }
+        val (verifier, next) = pending
+        showServer(
+            "/api/mobile-sign-in/redeem?" + Uri.Builder()
+                .appendQueryParameter("code", code)
+                .appendQueryParameter("verifier", verifier)
+                .appendQueryParameter("next", next)
+                .build().encodedQuery,
+        )
+        return true
     }
 
     /** Runs `action` only when the page asking belongs to the server; the bridge calls it off the UI thread. */

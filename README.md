@@ -211,7 +211,7 @@ first; the rest are the admin's:
 - **Secrets.** Names only; values go in once and never come back out.
   Apps, MCP servers and secrets are each person's own.
 - **Authentication.** The OIDC provider (name, issuer, client id and secret,
-  scopes; the redirect URL to register at the provider), and the people
+  scopes; the redirect and sign-out URLs to register at the provider), and the people
   who have signed in, with a way to remove one along with their bots.
 
 ### More than one person
@@ -220,9 +220,14 @@ One local account exists: the admin, made with the setup token. It signs
 in with its username and password, always, so a provider outage never
 locks it out. To let others in, set up your identity provider under
 Settings → Authentication: register a client there with the redirect URL the
-card shows (`<APP_URL>/api/auth/callback/oidc`), paste the issuer, the
-client id and the secret, save, and turn it on. The sign-in page shows
+card shows (`<APP_URL>/api/auth/callback/oidc`) and its sign-out URL
+(`<APP_URL>/login`, Pocket ID's "logout callback URL"), paste the issuer,
+the client id and the secret, save, and turn it on. The sign-in page shows
 "Sign in with <name>"; the first sign-in through it creates the person.
+Signing out of Kru Bot signs out of the provider too and comes back to the
+sign-in page. In the Android app the provider's page opens in the phone's
+browser (a WebView can't use passkeys) and the app picks the sign-in up
+when it comes back.
 
 Everyone who signs in that way is a user: they create bots, chat, add
 routines, approve what their bots ask, and set their own picture, theme

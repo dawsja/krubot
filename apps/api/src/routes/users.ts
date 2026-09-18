@@ -2,7 +2,7 @@ import { oidcPatchSchema, type AuthConfig } from "@krubot/shared";
 import { Hono } from "hono";
 import { userId } from "../access.ts";
 import type { Env } from "../app.ts";
-import { getAuth, invalidateAuth, oidcCallbackUrl } from "../auth.ts";
+import { getAuth, invalidateAuth, oidcCallbackUrl, oidcLogoutUrl } from "../auth.ts";
 import { boxConfig, deleteBotHome } from "../box.ts";
 import { clearOidcSecret, getOidcSettings, oidcReady, updateOidcSettings } from "../data/oidc.ts";
 import { listThreads } from "../data/threads.ts";
@@ -24,7 +24,7 @@ export function authConfig(local: boolean): AuthConfig {
 export function usersRoutes() {
   const app = new Hono<Env>();
 
-  app.get("/oidc", (c) => c.json({ oidc: getOidcSettings(), callbackUrl: oidcCallbackUrl() }));
+  app.get("/oidc", (c) => c.json({ oidc: getOidcSettings(), callbackUrl: oidcCallbackUrl(), logoutUrl: oidcLogoutUrl() }));
 
   app.patch("/oidc", async (c) => {
     const parsed = oidcPatchSchema.safeParse(await c.req.json().catch(() => ({})));
@@ -37,14 +37,14 @@ export function usersRoutes() {
     }
     // The provider list is fixed when Better Auth is made; the next request gets a new instance.
     invalidateAuth();
-    return c.json({ oidc: getOidcSettings(), callbackUrl: oidcCallbackUrl() });
+    return c.json({ oidc: getOidcSettings(), callbackUrl: oidcCallbackUrl(), logoutUrl: oidcLogoutUrl() });
   });
 
   /** Forgets the client secret and turns the provider off. */
   app.delete("/oidc/secret", (c) => {
     const oidc = clearOidcSecret();
     invalidateAuth();
-    return c.json({ oidc, callbackUrl: oidcCallbackUrl() });
+    return c.json({ oidc, callbackUrl: oidcCallbackUrl(), logoutUrl: oidcLogoutUrl() });
   });
 
   app.get("/users", (c) => c.json({ users: listUsers() }));

@@ -10,6 +10,7 @@ import { connectionsRoutes } from "./routes/connections.ts";
 import { eventsRoutes } from "./routes/events.ts";
 import { llmProxyRoutes, providerRoutes } from "./routes/llm.ts";
 import { mcpProxyRoutes, mcpRoutes } from "./routes/mcp.ts";
+import { mobileSignInRoutes } from "./routes/mobile-sign-in.ts";
 import { pushRoutes } from "./routes/push.ts";
 import { secretsRoutes } from "./routes/secrets.ts";
 import { skillsRoutes } from "./routes/skills.ts";
@@ -22,8 +23,8 @@ export type Env = { Variables: { session: Session } };
 
 /**
  * The API. Everything under /api needs a signed-in person, except the auth
- * routes, registration, the sign-in page's view of the auth setup, and
- * the health check. Unsafe methods must be same-origin. Server-wide
+ * routes, registration, the sign-in page's view of the auth setup, the
+ * Android app's sign-in handoff, and the health check. Unsafe methods must be same-origin. Server-wide
  * settings (the AI, the computer, the skills, who may sign in) are the
  * admin's; bots, conversations, connected apps, MCP servers and secrets
  * are each person's own, the admin's included.
@@ -54,6 +55,9 @@ export function createApp() {
     const signIn = await auth.api.signInUsername({ body: { username: String(body.username).trim().toLowerCase(), password: String(body.password) }, headers: c.req.raw.headers, asResponse: true });
     return signIn;
   });
+
+  // The Android app's sign-in with the provider: the phone's browser, then the app, before either has a session.
+  app.route("/", mobileSignInRoutes());
 
   // The MCP and LLM proxies are for the box, with their own tokens, not a session.
   app.route("/api", mcpProxyRoutes());

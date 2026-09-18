@@ -348,6 +348,14 @@ export type UserSummary = Me & { createdAt: string; bots: number };
  * the client secret is stored encrypted and never read back.
  */
 export const OIDC_PROVIDER_ID = "oidc";
+
+/**
+ * Where a sign-in with the OIDC provider in the Android app comes back: the
+ * provider's page runs in the phone's browser (a WebView can't use passkeys,
+ * and many providers refuse one), and the API hands the app a one-time code
+ * here. Kept in step with the intent filter in apps/android's manifest.
+ */
+export const MOBILE_SIGN_IN_CALLBACK = "krubot://sign-in";
 export const OIDC_DEFAULT_SCOPES = "openid profile email";
 
 export type OidcSettings = {
