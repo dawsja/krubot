@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- One primary, ink, as in the web app; the orange brand is the focus ring only. -->
+    <style name="Theme.KruBot" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorOnPrimary">@color/on_primary</item>
+        <item name="colorSurface">@color/background</item>
+        <item name="colorOnSurface">@color/foreground</item>
+        <item name="colorOnSurfaceVariant">@color/muted_foreground</item>
+        <item name="colorOutline">@color/input</item>
+        <item name="colorError">@color/destructive</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
+        <item name="android:windowLightNavigationBar">?attr/isLightTheme</item>
+    </style>
+
+    <!-- The system splash (Android 12+): the logo on the page colour, then the app. -->
+    <style name="Theme.KruBot.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.KruBot</item>
+    </style>
+
+    <style name="Widget.KruBot.Button" parent="Widget.Material3.Button">
+        <item name="android:minHeight">52dp</item>
+        <item name="cornerRadius">26dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:letterSpacing">-0.01</item>
+    </style>
+
+    <style name="Widget.KruBot.TextButton" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/muted_foreground</item>
+    </style>
+
+    <style name="Widget.KruBot.TextInput" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
+        <item name="boxStrokeColor">@color/text_input_stroke</item>
+        <item name="boxBackgroundColor">@color/card</item>
+        <item name="hintTextColor">@color/muted_foreground</item>
+    </style>
+</resources>

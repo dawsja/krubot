@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The server address is kept; the WebView's cookies and caches are not backed up. -->
+<full-backup-content>
+    <include domain="sharedpref" path="kru.xml" />
+</full-backup-content>

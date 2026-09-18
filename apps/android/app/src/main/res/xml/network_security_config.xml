@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A Kru Bot on the local network is usually plain http (the README's
+  quick start publishes port 3000 without TLS), so cleartext is allowed to
+  the server the person chose. Anything beyond the LAN should sit behind a
+  reverse proxy with TLS, as the README says.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

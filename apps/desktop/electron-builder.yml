@@ -1,0 +1,33 @@
+# Kru Bot for the desktop: `bun run dist:win` builds the Windows installer
+# (on Windows; NSIS needs Wine elsewhere), `bun run dist:linux` the AppImage.
+# Both land in release/.
+appId: app.krubot.desktop
+copyright: MIT licensed
+directories:
+  output: release
+files:
+  - package.json
+  - src/**/*
+# No runtime dependencies, so nothing to rebuild or install into the app.
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: src/logo.png
+nsis:
+  oneClick: true
+  perMachine: false
+  artifactName: Kru-Bot-Setup-${version}.${ext}
+  shortcutName: Kru Bot
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: src/logo.png
+  executableName: kru-bot
+  syncDesktopName: true
+  category: Network
+  synopsis: Your team of always-on AI bots
+appImage:
+  artifactName: Kru-Bot-${version}-${arch}.${ext}

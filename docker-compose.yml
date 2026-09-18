@@ -1,0 +1,107 @@
+services:
+  # The web app: what you open in the browser. It serves the UI and passes
+  # /api/* through to the API on the Compose network, so one origin and one
+  # login cookie cover both.
+  web:
+    image: ${KRU_WEB_IMAGE:-ghcr.io/dawsja/krubot-web:latest}
+    # To build from source instead, uncomment `build` here, on the api and
+    # on the box, and run `docker compose up -d --build` from a clone.
+    # build:
+    #   context: .
+    #   dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      # Reachable only from this machine. Put a reverse proxy with HTTPS in
+      # front of it for remote access (see README).
+      - "${KRU_PORT:-3000}:3000"
+    environment:
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - KRU_API_URL=http://api:8790
+    depends_on:
+      - api
+
+  # The API: bots, conversations, approvals, routines, connected apps. It
+  # owns the database and drives the box. No port is published.
+  api:
+    image: ${KRU_API_IMAGE:-ghcr.io/dawsja/krubot-api:latest}
+    # build:
+    #   context: .
+    #   dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      # Must match the address you open in the browser.
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      # Optional; passed through only when set in your shell or .env file.
+      - KRU_SECRET_KEY
+      - KRU_SETUP_TOKEN
+      - BETTER_AUTH_SECRET
+      - COMPOSIO_API_KEY
+      - COMPOSIO_TOOLKITS
+      - KRU_BOT_EFFORT
+      - KRU_BOT_CONCURRENCY
+      - KRU_APPROVAL_TIMEOUT_MINUTES
+      # The box, where every bot has its computer. Required.
+      - KRU_BOX_URL=http://box:8787
+      # Where the box reaches this API: your HTTP MCP servers go through it.
+      - KRU_API_INTERNAL_URL=http://api:8790
+      - KRU_NUDGE_MINUTES
+      # Only for an MCP server that will not register Kru as an OAuth client itself.
+      - KRU_MCP_CLIENT_ID
+      - KRU_MCP_CLIENT_SECRET
+    volumes:
+      - kru-data:/data
+      # The box writes its access token here on first start.
+      - kru-box-state:/box-state:ro
+      # Settings → Computer → Update pulls the newest box image from GHCR and
+      # recreates the box through this socket. Whoever can use it can control
+      # Docker on this machine, so it is the one thing here with host access;
+      # remove these two lines to keep updates to in-place patching only.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The API runs as an unprivileged user; it needs the socket's group to
+    # use it. Set KRU_DOCKER_GID to `stat -c %g /var/run/docker.sock`.
+    group_add:
+      - "${KRU_DOCKER_GID:-999}"
+    depends_on:
+      - box
+
+  # Every bot's computer: its home folder, a shell, a browser and a desktop.
+  # No ports are published; only the API can reach it. Nothing in it can
+  # see the API's data. Settings → Computer → Update patches it in place
+  # (Debian, Bun, Claude Code) and, with the Docker socket above, pulls the
+  # newest image and recreates it with these same volumes.
+  box:
+    image: ${KRU_BOX_IMAGE:-ghcr.io/dawsja/krubot-box:latest}
+    # build: ./packages/box
+    restart: unless-stopped
+    environment:
+      - BOT_IDLE_MS
+    volumes:
+      - kru-box-state:/state
+      # The box is not a throwaway. The agent's whole home is a volume, so
+      # what the bots set up for themselves (global packages, tools,
+      # dotfiles, browser profiles) survives restarts and image updates.
+      - kru-box-home:/home/agent
+      # Every bot's home: MEMORY.md, SOUL.md, notes, clones. Hidden, with
+      # .team and .skills, so the home looks like a person's.
+      - kru-box-bots:/home/agent/.bots
+      # Package caches survive restarts, so installs are fast.
+      - kru-box-cache:/home/agent/.cache
+      # The Claude Code sign-in, made once from the box desktop, survives
+      # restarts and image updates. The API never reads it.
+      - kru-box-claude:/home/agent/.claude
+    security_opt:
+      - no-new-privileges:true
+    # The desktop's X server and GTK apps share pixmaps through /dev/shm.
+    shm_size: ${KRU_BOX_SHM:-256m}
+    # Keep a runaway job from taking the host down.
+    pids_limit: 4096
+    mem_limit: ${KRU_BOX_MEMORY:-4g}
+    cpus: ${KRU_BOX_CPUS:-2}
+
+volumes:
+  kru-data:
+  kru-box-state:
+  kru-box-home:
+  kru-box-bots:
+  kru-box-cache:
+  kru-box-claude:

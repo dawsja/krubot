@@ -1,0 +1,23 @@
+{
+  "name": "krubot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kru Bot: a self-hosted, open-source team of always-on AI bots with their own computer.",
+  "license": "MIT",
+  "workspaces": ["apps/*", "packages/*"],
+  "trustedDependencies": ["electron"],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:api": "bun run --filter @krubot/api dev",
+    "dev:web": "bun run --filter @krubot/web dev",
+    "dev:box": "bun run --filter @krubot/box dev",
+    "build": "bun run --filter @krubot/shared build && bun run --filter @krubot/api build && bun run --filter @krubot/web build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "bun run --filter '*' lint",
+    "test": "bun run --filter '*' test"
+  },
+  "packageManager": "bun@1.4.2"
+}

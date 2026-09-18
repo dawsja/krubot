@@ -1,0 +1,280 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release to attach the apps to (v1.2.3); empty only builds. Assets the release already has are kept."
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # The release the apps are built for: the pushed tag, or the one a manual run names.
+  RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.tag || '' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, typecheck and test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install ${{ hashFiles('bun.lock') != '' && '--frozen-lockfile' || '' }}
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
+
+  desktop:
+    name: Desktop app for ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # NSIS needs Windows (or Wine) to write the installer.
+          - os: windows
+            runner: windows-latest
+            script: dist:win
+            files: apps/desktop/release/*.exe
+          - os: linux
+            runner: ubuntu-24.04
+            script: dist:linux
+            files: apps/desktop/release/*.AppImage
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install ${{ hashFiles('bun.lock') != '' && '--frozen-lockfile' || '' }}
+      # A release tag (v1.2.3) names the installers; package.json stays 0.x in the tree.
+      - if: env.RELEASE_TAG != ''
+        shell: bash
+        run: bun -e "const f = 'apps/desktop/package.json'; const p = await Bun.file(f).json(); p.version = process.env.RELEASE_TAG.slice(1); await Bun.write(f, JSON.stringify(p, null, 2) + '\\n');"
+      - run: bun run --filter @krubot/desktop ${{ matrix.script }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: krubot-desktop-${{ matrix.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  android:
+    name: Android app
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: 8.14.3
+      # A release tag (v1.2.3) names the APK; package.json stays 0.x in the tree.
+      - if: env.RELEASE_TAG != ''
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const f='apps/android/package.json';const p=JSON.parse(fs.readFileSync(f,'utf8'));p.version=process.env.RELEASE_TAG.slice(1);fs.writeFileSync(f,JSON.stringify(p,null,2)+'\n');"
+      # Signed with the keystore in the repository's secrets when there is one; the debug key otherwise.
+      - name: Keystore from secrets
+        if: env.KEYSTORE != ''
+        env:
+          KEYSTORE: ${{ secrets.KRU_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "KRU_ANDROID_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+      - working-directory: apps/android
+        env:
+          KRU_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KRU_ANDROID_KEYSTORE_PASSWORD }}
+          KRU_ANDROID_KEY_ALIAS: ${{ secrets.KRU_ANDROID_KEY_ALIAS }}
+          KRU_ANDROID_KEY_PASSWORD: ${{ secrets.KRU_ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon testReleaseUnitTest assembleRelease
+      - uses: actions/upload-artifact@v7
+        with:
+          name: krubot-android
+          path: apps/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  release:
+    name: Release the desktop and Android apps
+    needs: [desktop, android]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: release
+          pattern: krubot-*
+          merge-multiple: true
+      # A new tag gets a release with everything; an existing release (a
+      # manual run for it) gets what it doesn't have yet and keeps the rest.
+      - name: Create the GitHub release, or add to it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            existing=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+            for file in release/*; do
+              name=$(basename "$file")
+              if grep -qxF "$name" <<<"$existing"; then echo "$name is already on $RELEASE_TAG"; continue; fi
+              gh release upload "$RELEASE_TAG" "$file" --repo "$GITHUB_REPOSITORY"
+            done
+          else
+            gh release create "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --title "Kru Bot $RELEASE_TAG" --generate-notes
+          fi
+
+  build:
+    name: Build ${{ matrix.name }} ${{ matrix.arch }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        # Three images: the web app, the API, and the box where bots work.
+        name: [krubot-web, krubot-api, krubot-box]
+        arch: [amd64, arm64]
+        include:
+          - name: krubot-web
+            context: .
+            dockerfile: apps/web/Dockerfile
+          - name: krubot-api
+            context: .
+            dockerfile: apps/api/Dockerfile
+          - name: krubot-box
+            context: packages/box
+            dockerfile: packages/box/Dockerfile
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+      # Pull requests only check that the image builds.
+      PUSH: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}
+          cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.arch }}
+      - name: Export digest
+        if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - if: env.PUSH == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.name }}--${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish ${{ matrix.name }}
+    needs: build
+    if: github.event_name != 'pull_request'
+    strategy:
+      # One image's publish must not cancel the other two.
+      fail-fast: false
+      matrix:
+        name: [krubot-web, krubot-api, krubot-box]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ matrix.name }}--*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          # latest follows main; release tags (v1.2.3) publish 1.2.3 and 1.2.
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+      - name: Create manifest list
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          mapfile -t tags < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          args=()
+          for tag in "${tags[@]}"; do args+=(-t "$tag"); done
+          for digest in *; do args+=("$IMAGE@sha256:$digest"); done
+          docker buildx imagetools create "${args[@]}"
+      - name: Read manifest digest
+        id: manifest
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Published $IMAGE:$VERSION ($digest)" >> "$GITHUB_STEP_SUMMARY"
+      # Signed provenance for the published image. GitHub only stores
+      # attestations for public repositories and for private ones under an
+      # organization, so on a private personal repo this is skipped rather
+      # than failing a publish whose images are already pushed.
+      - if: github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true

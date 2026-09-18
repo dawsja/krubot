@@ -1,0 +1,17 @@
+{
+  "name": "@krubot/box",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The Kru Bot box: the computer every bot works on, with terminals and a desktop for you.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "lint": "node --check server.mjs && node --check agents.mjs && node --check claude.mjs && node --check kru-mcp.mjs && node --check bridge.mjs && node --check rpc.mjs && node --check codex.mjs && node --check grok.mjs",
+    "typecheck": "node --check server.mjs"
+  },
+  "dependencies": {
+    "node-pty": "1.1.0"
+  }
+}
