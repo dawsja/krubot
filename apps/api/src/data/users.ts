@@ -70,6 +70,9 @@ export function adoptOrphans(adminId: string) {
     db.query("UPDATE kru_bots SET user_id = ? WHERE user_id IS NULL").run(adminId);
     db.query("UPDATE kru_threads SET user_id = ? WHERE user_id IS NULL").run(adminId);
     db.query("UPDATE kru_push_subscriptions SET user_id = ? WHERE user_id IS NULL").run(adminId);
+    db.query("UPDATE kru_connections SET user_id = ? WHERE user_id IS NULL").run(adminId);
+    db.query("UPDATE kru_mcp_servers SET user_id = ? WHERE user_id IS NULL").run(adminId);
+    db.query("UPDATE kru_secrets SET user_id = ? WHERE user_id IS NULL").run(adminId);
     const legacy = db.query("SELECT media_type, data, updated_at FROM kru_avatar WHERE id = 1").get() as { media_type: string; data: Uint8Array; updated_at: string } | null;
     if (legacy) {
       db.query("INSERT OR IGNORE INTO kru_user_avatars (user_id, media_type, data, updated_at) VALUES (?, ?, ?, ?)").run(adminId, legacy.media_type, legacy.data, legacy.updated_at);
@@ -97,6 +100,10 @@ export function deleteUserData(userId: string): { bots: string[] } {
     db.query("DELETE FROM kru_bots WHERE user_id = ?").run(userId);
     db.query("DELETE FROM kru_push_subscriptions WHERE user_id = ?").run(userId);
     db.query("DELETE FROM kru_user_avatars WHERE user_id = ?").run(userId);
+    db.query("DELETE FROM kru_connections WHERE user_id = ?").run(userId);
+    db.query("DELETE FROM kru_mcp_servers WHERE user_id = ?").run(userId);
+    db.query("DELETE FROM kru_secrets WHERE user_id = ?").run(userId);
+    db.query("DELETE FROM kru_composio_keys WHERE user_id = ?").run(userId);
     return { bots };
   });
 }

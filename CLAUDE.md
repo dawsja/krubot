@@ -132,6 +132,14 @@ what is here. The README says what Kru Bot is; this says how it is made.
 - Anything that runs on the box goes through `src/box.ts`. The API never
   reads the Claude sign-in and never sends connected-app credentials to
   the box; app actions run through Composio in the API.
+- **Connected apps are each person's own** (`src/composio.ts`). Everyone
+  sets their own Composio project key in Settings → Apps
+  (`src/data/composio-keys.ts`, encrypted and write-only like a provider
+  key); the admin falls back to `COMPOSIO_API_KEY`, nobody else does.
+  Connections are rows per user, and every Composio call takes the
+  person's id: `toolsFor`, `executeAction` and `startConnection` run on
+  that person's key and their own connection, never anyone else's. A new
+  key for a different project forgets the old project's connections.
 - Long work is started by the dispatcher (`src/dispatcher.ts`) and awaited
   in the responder (`src/responder.ts`); a tick stays quick. While the
   computer updates or resets (`src/updater.ts`), nothing new starts and
@@ -149,8 +157,9 @@ what is here. The README says what Kru Bot is; this says how it is made.
   `src/routes/llm.ts`) and the provider's proxy token; only the proxy
   decrypts the key, and `allSecretValues()` includes it for redaction.
 - **Secrets never leave the API.** `src/data/secrets.ts` stores them
-  encrypted and only `readSecret`/`injectSecrets` decrypt, at the moment of
-  use: the MCP proxy in `src/routes/mcp.ts`. No route returns a value, no
+  encrypted, per person, and only `readSecret`/`injectSecrets` decrypt, at
+  the moment of use: the MCP proxy in `src/routes/mcp.ts`, which fills a
+  server's headers only from its owner's secrets. No route returns a value, no
   value goes to the box, and every bot reply and activity line passes
   through `createRedactor(allSecretValues())`. A bot asks with
   `request_secret` (a `secret` message kind, answered on
@@ -160,8 +169,10 @@ what is here. The README says what Kru Bot is; this says how it is made.
   carries the index; a `/slug` in the message puts that skill in full. A
   routine with a `skillId` posts `Use /slug.` ahead of its prompt.
 - **MCP servers go through `src/mcp.ts`**: HTTP ones become a proxy URL
-  with a per-server token; stdio ones are passed as given. A bot gets only
-  the servers it was given: `mcp:<server id>` in its `toolkits`, toggled in
+  with a per-server token; stdio ones are passed as given. Each server is
+  one person's (`user_id`; names are unique per person), and its routes
+  answer 404 to anyone else. A bot gets only its owner's servers that it
+  was given: `mcp:<server id>` in its `toolkits`, toggled in
   its profile next to the Composio apps; `add_mcp_server` gives the new
   server to the bot that asked. The box writes
   them into the session's MCP config next to `kru`; a changed config
@@ -195,15 +206,17 @@ what is here. The README says what Kru Bot is; this says how it is made.
   emits the same notice as a `notify` live event for the Android app.
 - **Roles.** `src/access.ts` is how a route knows who is asking:
   `requireAdmin` guards the admin's areas (mounted in `app.ts`: box,
-  status, catalog, onboarding, secrets, providers, users, oidc, and every
-  write to settings, skills, MCP servers and connections), `ownBot` and
+  status, onboarding, providers, users, oidc, and every write to settings
+  and skills), `ownBot` and
   `ownThread` answer null for anything that isn't the signed-in person's,
   and a route answers 404 then, never 403. `listBots`, `listThreads`,
   `getChief`, `createBot`, `createRoom`, `searchMessages` and the push
   functions take the user; the responder and the bot tools use the
-  conversation's owner. Reads everyone needs (the shared apps and MCP
-  servers a bot may be given, the skills index, a reduced settings view)
-  stay open and are narrowed inside their routes. A live event about a
+  conversation's owner. Connected apps, the Composio key, MCP servers and
+  secrets are everyone's own and answer only for the signed-in person;
+  nothing is shared between people. Reads everyone needs (the skills
+  index, a reduced settings view) stay open and are narrowed inside their
+  routes. A live event about a
   conversation or a person reaches only its owner (`routes/events.ts`).
 - **The OIDC provider** is `data/oidc.ts` (secret encrypted, write-only)
   and Better Auth's `genericOAuth` plugin in `auth.ts`, built from it with
@@ -233,8 +246,10 @@ what is here. The README says what Kru Bot is; this says how it is made.
 - Anything that uses the computer answers 503 while `update.sh` runs;
   reads of a bot's files still work. `POST /reset` wipes the home except
   `.bots`, `.team`, `.skills` and `.claude`.
-- `~/.team` is the team's shared space (`.team/MEMORY.md` loads into every
-  turn); `~/.skills` is the library mirror; `~/.bots/<id>` is each bot's
+- `~/.team` holds each person's team space, `.team/<user id>` (its
+  `MEMORY.md` loads into every turn of that person's bots, and nobody
+  else's; the admin's bots still read the old `.team/MEMORY.md` until they
+  write their own); `~/.skills` is the library mirror; `~/.bots/<id>` is each bot's
   home. All three are hidden so the home looks like a person's, and all
   belong to the agent user. `bots`, `team` and `skills` from an older box
   are moved over at start.
@@ -266,9 +281,9 @@ changed and why, written for the person reading the log.
   set up and is a user.
 - All bots, everyone's, share one computer. Separate bots (and separate
   people) are not a security boundary there; the container and the
-  unprivileged user are. Rows in the database are: a bot, a conversation
-  and a push subscription belong to a user, and a route never returns
-  another person's.
+  unprivileged user are. Rows in the database are: a bot, a conversation,
+  a push subscription, a connected app, a Composio key, an MCP server and
+  a secret belong to a user, and a route never returns another person's.
 - The web app never talks to the box; the API does, with a bearer token,
   over the Compose network.
 - The Docker socket on the API exists only for Settings → Computer →

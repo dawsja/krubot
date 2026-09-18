@@ -331,6 +331,70 @@ const MIGRATIONS: string[] = [
   );
   ALTER TABLE kru_settings ADD COLUMN oidc TEXT;
   `,
+  // Connected apps, MCP servers and secrets are each person's own, with
+  // their own Composio key: nothing is shared between people any more. The
+  // rows from before are the admin's; adoptOrphans fills in user_id once
+  // it knows who that is. Names are unique per person, not per install.
+  `
+  CREATE TABLE kru_connections_new (
+    user_id TEXT,
+    toolkit TEXT NOT NULL,
+    name TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, toolkit)
+  );
+  INSERT INTO kru_connections_new (user_id, toolkit, name, account_id, status, created_at)
+    SELECT NULL, toolkit, name, account_id, status, created_at FROM kru_connections;
+  DROP TABLE kru_connections;
+  ALTER TABLE kru_connections_new RENAME TO kru_connections;
+
+  CREATE TABLE kru_mcp_servers_new (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    name TEXT NOT NULL,
+    transport TEXT NOT NULL CHECK (transport IN ('http', 'stdio')),
+    url TEXT,
+    headers TEXT NOT NULL DEFAULT '{}',
+    command TEXT,
+    args TEXT NOT NULL DEFAULT '[]',
+    env TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    proxy_token TEXT NOT NULL,
+    oauth TEXT,
+    auth_status TEXT NOT NULL DEFAULT 'none',
+    auth_error TEXT,
+    oauth_redirect TEXT NOT NULL DEFAULT 'app',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, name)
+  );
+  INSERT INTO kru_mcp_servers_new (id, user_id, name, transport, url, headers, command, args, env, enabled, proxy_token, oauth, auth_status, auth_error, oauth_redirect, created_at, updated_at)
+    SELECT id, NULL, name, transport, url, headers, command, args, env, enabled, proxy_token, oauth, auth_status, auth_error, oauth_redirect, created_at, updated_at FROM kru_mcp_servers;
+  DROP TABLE kru_mcp_servers;
+  ALTER TABLE kru_mcp_servers_new RENAME TO kru_mcp_servers;
+
+  CREATE TABLE kru_secrets_new (
+    user_id TEXT,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL,
+    requested_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, name)
+  );
+  INSERT INTO kru_secrets_new (user_id, name, value, requested_by, created_at, updated_at)
+    SELECT NULL, name, value, requested_by, created_at, updated_at FROM kru_secrets;
+  DROP TABLE kru_secrets;
+  ALTER TABLE kru_secrets_new RENAME TO kru_secrets;
+
+  CREATE TABLE kru_composio_keys (
+    user_id TEXT PRIMARY KEY,
+    api_key TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export function runMigrations(db: Database) {

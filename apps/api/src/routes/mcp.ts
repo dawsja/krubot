@@ -1,10 +1,9 @@
 import { mcpServerInputSchema } from "@krubot/shared";
-import { Hono } from "hono";
-import { admin } from "../access.ts";
+import { Hono, type Context } from "hono";
+import { ownThread, userId } from "../access.ts";
 import type { Env } from "../app.ts";
 import { appUrl } from "../config.ts";
-import { createMcpServer, deleteMcpServer, getMcpServer, listMcpServers, mcpProxyToken, setMcpAuthStatus, updateMcpServer } from "../data/mcp.ts";
-import { getThread } from "../data/threads.ts";
+import { createMcpServer, deleteMcpServer, getMcpServer, listMcpServers, mcpProxyToken, mcpServerOwner, setMcpAuthStatus, updateMcpServer } from "../data/mcp.ts";
 import { bearerFor, completeMcpLogin, completeMcpLoginFrom, probeMcpServer, signOutMcp, startMcpLogin } from "../mcp-oauth.ts";
 import { injectSecrets } from "../data/secrets.ts";
 import { resolveMcpIcon } from "../mcp-icon.ts";
@@ -13,7 +12,8 @@ import { timingSafeEqualString } from "../ids.ts";
 /*
  * Your MCP servers: the settings, and the proxy the box reaches HTTP
  * servers through. The proxy is the one place secrets get added to a
- * request, so a bot's session never holds them.
+ * request, so a bot's session never holds them. Each server is one
+ * person's; anyone else gets a 404 for it.
  */
 
 function validate(input: unknown) {
@@ -25,20 +25,21 @@ function validate(input: unknown) {
   return { data };
 }
 
+/** The server, when it is the signed-in person's. */
+function ownServer(c: Context<Env>, id: string) {
+  return mcpServerOwner(id) === userId(c) ? getMcpServer(id) : null;
+}
+
 export function mcpRoutes() {
   const app = new Hono<Env>();
 
-  app.get("/mcp-servers", (c) => {
-    if (admin(c)) return c.json({ servers: listMcpServers() });
-    // A user sees the servers the admin shared: the name and the kind, not the headers or the sign-in.
-    return c.json({ servers: listMcpServers().filter((s) => s.shared && s.enabled).map((s) => ({ ...s, headers: {}, env: {}, args: [], command: s.command ? "(command)" : undefined, authError: null })) });
-  });
+  app.get("/mcp-servers", (c) => c.json({ servers: listMcpServers(userId(c)) }));
 
   app.post("/mcp-servers", async (c) => {
     const result = validate(await c.req.json().catch(() => ({})));
     if ("error" in result) return c.json({ error: result.error }, 400);
     try {
-      const server = createMcpServer(result.data!);
+      const server = createMcpServer(result.data!, userId(c));
       // Does it want a sign-in? The card shows a Sign in button when it does.
       if (server.transport === "http") void probeMcpServer(server.id).catch(() => undefined);
       return c.json({ server }, 201);
@@ -48,7 +49,7 @@ export function mcpRoutes() {
   });
 
   app.patch("/mcp-servers/:id", async (c) => {
-    const current = getMcpServer(c.req.param("id"));
+    const current = ownServer(c, c.req.param("id"));
     if (!current) return c.json({ error: "No such server" }, 404);
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const result = validate({ ...current, ...body });
@@ -60,7 +61,7 @@ export function mcpRoutes() {
 
   // The server's picture for the settings row and the bot's profile: its site icon, or 404 for the plug.
   app.get("/mcp-servers/:id/icon", async (c) => {
-    const server = getMcpServer(c.req.param("id"));
+    const server = ownServer(c, c.req.param("id"));
     if (!server) return c.json({ error: "No such server" }, 404);
     const icon = await resolveMcpIcon(server);
     if (!icon) return c.body(null, 404, { "Cache-Control": "private, max-age=3600" });
@@ -71,17 +72,17 @@ export function mcpRoutes() {
   // ---------- sign-in for servers that ask for one ----------
 
   app.post("/mcp-servers/:id/probe", async (c) => {
-    const server = getMcpServer(c.req.param("id"));
+    const server = ownServer(c, c.req.param("id"));
     if (!server) return c.json({ error: "No such server" }, 404);
     return c.json({ result: await probeMcpServer(server.id), server: getMcpServer(server.id) });
   });
 
   app.post("/mcp-servers/:id/login", async (c) => {
-    const server = getMcpServer(c.req.param("id"));
+    const server = ownServer(c, c.req.param("id"));
     if (!server) return c.json({ error: "No such server" }, 404);
     // A card in a conversation passes its thread, so the sign-in comes back there.
     const body = (await c.req.json().catch(() => ({}))) as { threadId?: unknown };
-    const threadId = typeof body.threadId === "string" && getThread(body.threadId) ? body.threadId : undefined;
+    const threadId = typeof body.threadId === "string" && ownThread(c, body.threadId) ? body.threadId : undefined;
     try {
       return c.json({ url: await startMcpLogin(server.id, { threadId }) });
     } catch (error) {
@@ -92,7 +93,7 @@ export function mcpRoutes() {
   });
 
   app.get("/mcp-servers/oauth/callback", async (c) => {
-    const result = await completeMcpLogin({ code: c.req.query("code"), state: c.req.query("state"), error: c.req.query("error"), errorDescription: c.req.query("error_description") });
+    const result = await completeMcpLogin({ code: c.req.query("code"), state: c.req.query("state"), error: c.req.query("error"), errorDescription: c.req.query("error_description") }, userId(c));
     if (result.threadId) return c.redirect(`${appUrl()}/app/t/${result.threadId}`);
     return c.redirect(`${appUrl()}/app/settings/apps?${result.ok ? `mcp=${encodeURIComponent(result.name ?? "")}` : `mcp_error=${encodeURIComponent(result.reason ?? "")}`}`);
   });
@@ -101,19 +102,19 @@ export function mcpRoutes() {
   app.post("/mcp-servers/oauth/complete", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { url?: unknown };
     if (typeof body.url !== "string" || !body.url.trim() || body.url.length > 8000) return c.json({ error: "Paste the address the sign-in ended on." }, 400);
-    const result = await completeMcpLoginFrom(body.url);
+    const result = await completeMcpLoginFrom(body.url, userId(c));
     return result.ok ? c.json({ name: result.name, threadId: result.threadId }) : c.json({ error: result.reason }, 400);
   });
 
   app.delete("/mcp-servers/:id/login", (c) => {
-    const server = getMcpServer(c.req.param("id"));
+    const server = ownServer(c, c.req.param("id"));
     if (!server) return c.json({ error: "No such server" }, 404);
     signOutMcp(server.id);
     return c.json({ server: getMcpServer(server.id) });
   });
 
   app.delete("/mcp-servers/:id", (c) => {
-    const ok = deleteMcpServer(c.req.param("id"));
+    const ok = Boolean(ownServer(c, c.req.param("id"))) && deleteMcpServer(c.req.param("id"));
     return ok ? c.body(null, 204) : c.json({ error: "No such server" }, 404);
   });
 
@@ -147,7 +148,9 @@ export function mcpProxyRoutes() {
     const headers = new Headers();
     for (const [key, value] of c.req.raw.headers) if (!HOP.has(key.toLowerCase())) headers.set(key, value);
     const missing: string[] = [];
-    for (const [key, value] of Object.entries(server.headers)) headers.set(key, injectSecrets(value, (name) => missing.push(name)));
+    // Only the server's owner's secrets fill its headers.
+    const owner = mcpServerOwner(server.id) ?? "";
+    for (const [key, value] of Object.entries(server.headers)) headers.set(key, injectSecrets(value, owner, (name) => missing.push(name)));
     if (missing.length) return c.json({ error: `Secret${missing.length > 1 ? "s" : ""} not set: ${missing.join(", ")}. Add ${missing.length > 1 ? "them" : "it"} under Settings → Secrets.` }, 424);
     // A server the person signed in to gets the bearer token; one that asked and wasn't answered gets told so.
     if (server.authStatus === "signed_in") {

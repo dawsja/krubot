@@ -4,10 +4,32 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 let dir = "";
-beforeAll(() => {
+beforeAll(async () => {
   dir = mkdtempSync(path.join(tmpdir(), "krubot-"));
   process.env.KRU_DATA_DIR = dir;
+  await seedUsers(["u-admin", "admin"]);
 });
+
+/** A Hono app whose requests come from this person, as the session middleware in app.ts would set. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function asPerson<T extends { use: (...args: any[]) => unknown }>(app: T, id: string): T {
+  app.use("*", async (c: { set: (key: string, value: unknown) => void }, next: () => Promise<void>) => {
+    c.set("session", { user: { id } });
+    await next();
+  });
+  return app;
+}
+
+/** Better Auth's user table, as its migration makes it (enough for the reads here), with these people in it. */
+async function seedUsers(...people: [id: string, role: "admin" | "user"][]) {
+  const { ensureKruDatabase } = await import("../src/db/init.ts");
+  const db = ensureKruDatabase();
+  db.exec(`CREATE TABLE IF NOT EXISTS "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT, emailVerified INTEGER, image TEXT, role TEXT, createdAt TEXT, updatedAt TEXT);
+           CREATE TABLE IF NOT EXISTS "account" (id TEXT PRIMARY KEY, userId TEXT, providerId TEXT, accountId TEXT, createdAt TEXT, updatedAt TEXT);`);
+  for (const [id, role] of people) {
+    db.query('INSERT OR REPLACE INTO "user" (id, name, email, role, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)').run(id, id, `${id}@example.com`, role, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
+  }
+}
 afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
@@ -262,7 +284,7 @@ describe("data", () => {
       expect(await tool.execute({ name: "x", url: "https://me:pw@example.com/mcp" }, "c")).toContain("NOT added");
       const added = String(await tool.execute({ name: "Robinhood", url: `http://127.0.0.1:${fake.port}/private/mcp` }, "c"));
       expect(added).toContain("Sign in card");
-      const server = listMcpServers().find((m) => m.name === "robinhood")!;
+      const server = listMcpServers("u-admin").find((m) => m.name === "robinhood")!;
       expect(server.authStatus).toBe("needed");
       // The bot that added it gets it; another bot doesn't until the person gives it.
       const { getBot } = await import("../src/data/bots.ts");
@@ -279,14 +301,14 @@ describe("data", () => {
       // Asking again (or connect_app after add_mcp_server) doesn't add a second server or a second card.
       expect(String(await tool.execute({ name: "robinhood", url: `http://127.0.0.1:${fake.port}/private/mcp` }, "c"))).toContain("already attached");
       expect(String(await baseTools(context).connect_app!.execute({ app: "robinhood" }, "c"))).toContain("Sign in card");
-      expect(listMcpServers().filter((m) => m.name === "robinhood")).toHaveLength(1);
+      expect(listMcpServers("u-admin").filter((m) => m.name === "robinhood")).toHaveLength(1);
       expect(listMessages(bot.threadId).filter((m) => m.kind === "signin")).toHaveLength(1);
       expect(String(await tool.execute({ name: "Open Data", url: `http://127.0.0.1:${fake.port}/public/mcp` }, "c"))).toContain("without a sign-in");
-      expect(listMcpServers().find((m) => m.name === "open-data")?.authStatus).toBe("none");
+      expect(listMcpServers("u-admin").find((m) => m.name === "open-data")?.authStatus).toBe("none");
       // The card's Sign in: the sign-in remembers the conversation and comes back to it, and the bot hears.
       const { mcpRoutes } = await import("../src/routes/mcp.ts");
       const { Hono } = await import("hono");
-      const app = new Hono();
+      const app = asPerson(new Hono(), "u-admin");
       app.route("/api", mcpRoutes());
       const beforeSignIn = JSON.stringify(boxMcpServers(getBot(bot.id)!));
       const started = (await (await app.request(`/api/mcp-servers/${server.id}/login`, { method: "POST", body: JSON.stringify({ threadId: bot.threadId }) })).json()) as { url: string };
@@ -294,7 +316,7 @@ describe("data", () => {
       const back = await app.request(`/api/mcp-servers/oauth/callback?code=c1&state=${state}`);
       expect(back.status).toBe(302);
       expect(back.headers.get("location")).toEndWith(`/app/t/${bot.threadId}`);
-      expect(listMcpServers().find((m) => m.name === "robinhood")?.authStatus).toBe("signed_in");
+      expect(listMcpServers("u-admin").find((m) => m.name === "robinhood")?.authStatus).toBe("signed_in");
       // The sign-in changes what the box gets, so the bot's session relaunches and lists the tools.
       const signedIn = JSON.stringify(boxMcpServers(getBot(bot.id)!));
       expect(signedIn).not.toBe(beforeSignIn);
@@ -302,7 +324,7 @@ describe("data", () => {
       const after = listMessages(bot.threadId);
       expect(after.some((m) => m.kind === "event" && m.body === "Signed in to robinhood.")).toBe(true);
       expect(after.some((m) => m.kind === "prompt" && m.author === "system" && m.body.includes("robinhood"))).toBe(true);
-      for (const m of listMcpServers()) deleteMcpServer(m.id);
+      for (const m of listMcpServers("u-admin")) deleteMcpServer(m.id);
       // A deleted server leaves no trace in a bot's apps.
       expect(getBot(bot.id)!.toolkits.some((t) => t.startsWith("mcp:"))).toBe(false);
     } finally {
@@ -326,8 +348,8 @@ describe("data", () => {
       },
     });
     try {
-      const server = createMcpServer({ name: "robinhood", transport: "http", url: `http://127.0.0.1:${fake.port}/mcp/trading`, headers: { "X-Kru-Test": "1" }, args: [], env: {}, enabled: true, shared: false });
-      const [given] = boxMcpServers({ toolkits: [`mcp:${server.id}`] });
+      const server = createMcpServer({ name: "robinhood", transport: "http", url: `http://127.0.0.1:${fake.port}/mcp/trading`, headers: { "X-Kru-Test": "1" }, args: [], env: {}, enabled: true }, "u-admin");
+      const [given] = boxMcpServers({ toolkits: [`mcp:${server.id}`], userId: "u-admin" });
       expect(given?.type).toBe("http");
       if (given?.type !== "http") throw new Error("expected an http server");
       const app = new Hono().route("/api", mcpProxyRoutes());
@@ -366,22 +388,22 @@ describe("data", () => {
     });
     const iconService = `http://127.0.0.1:${icons.port}/`;
     try {
-      const robinhood = createMcpServer({ name: "robinhood", transport: "http", url: "https://agent.robinhood.com/mcp/trading", headers: {}, args: [], env: {}, enabled: true, shared: false });
+      const robinhood = createMcpServer({ name: "robinhood", transport: "http", url: "https://agent.robinhood.com/mcp/trading", headers: {}, args: [], env: {}, enabled: true }, "u-admin");
       const found = await resolveMcpIcon(robinhood, { iconService });
       expect(found?.kind).toBe("image");
       expect(asked).toEqual(["agent.robinhood.com.ico", "robinhood.com.ico"]);
       // Kept for a day: a second look doesn't ask again.
       await resolveMcpIcon(robinhood, { iconService });
       expect(asked).toHaveLength(2);
-      const nowhere = createMcpServer({ name: "nowhere", transport: "http", url: "https://nonexistent.example/mcp", headers: {}, args: [], env: {}, enabled: true, shared: false });
+      const nowhere = createMcpServer({ name: "nowhere", transport: "http", url: "https://nonexistent.example/mcp", headers: {}, args: [], env: {}, enabled: true }, "u-admin");
       expect(await resolveMcpIcon(nowhere, { iconService })).toBeNull();
-      const linear = createMcpServer({ name: "linear", transport: "http", url: "https://mcp.linear.app/mcp", headers: {}, args: [], env: {}, enabled: true, shared: false });
+      const linear = createMcpServer({ name: "linear", transport: "http", url: "https://mcp.linear.app/mcp", headers: {}, args: [], env: {}, enabled: true }, "u-admin");
       expect(await resolveMcpIcon(linear, { iconService })).toEqual({ kind: "redirect", url: "https://logos.composio.dev/api/linear" });
-      const command = createMcpServer({ name: "local", transport: "stdio", command: "npx", headers: {}, args: [], env: {}, enabled: true, shared: false });
+      const command = createMcpServer({ name: "local", transport: "stdio", command: "npx", headers: {}, args: [], env: {}, enabled: true }, "u-admin");
       expect(await resolveMcpIcon(command, { iconService })).toBeNull();
       const { mcpRoutes } = await import("../src/routes/mcp.ts");
       const { Hono } = await import("hono");
-      const app = new Hono().route("/api", mcpRoutes());
+      const app = asPerson(new Hono(), "u-admin").route("/api", mcpRoutes());
       expect((await app.request(`/api/mcp-servers/${linear.id}/icon`)).status).toBe(302);
       expect((await app.request(`/api/mcp-servers/${command.id}/icon`)).status).toBe(404);
       for (const s of [robinhood, nowhere, linear, command]) deleteMcpServer(s.id);
@@ -419,11 +441,11 @@ describe("data", () => {
     });
     port = fake.port ?? 0;
     try {
-      const server = createMcpServer({ name: "local-only", transport: "http", url: `http://127.0.0.1:${port}/mcp`, headers: {}, args: [], env: {}, enabled: true, shared: false, oauthRedirect: "localhost" });
+      const server = createMcpServer({ name: "local-only", transport: "http", url: `http://127.0.0.1:${port}/mcp`, headers: {}, args: [], env: {}, enabled: true, oauthRedirect: "localhost" }, "u-admin");
       expect(server.oauthRedirect).toBe("localhost");
       const { mcpRoutes } = await import("../src/routes/mcp.ts");
       const { Hono } = await import("hono");
-      const app = new Hono();
+      const app = asPerson(new Hono(), "u-admin");
       app.route("/api", mcpRoutes());
       const started = (await (await app.request(`/api/mcp-servers/${server.id}/login`, { method: "POST", body: "{}" })).json()) as { url: string };
       const authorize = new URL(started.url);
@@ -517,9 +539,8 @@ describe("data", () => {
     const { createBot, listBots } = await import("../src/data/bots.ts");
     const { botInputSchema } = await import("@krubot/shared");
     const db = ensureKruDatabase();
-    // Better Auth's tables, as its migration makes them, enough for the reads here.
-    db.exec(`CREATE TABLE IF NOT EXISTS "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT, emailVerified INTEGER, image TEXT, role TEXT, createdAt TEXT, updatedAt TEXT);
-             CREATE TABLE IF NOT EXISTS "account" (id TEXT PRIMARY KEY, userId TEXT, providerId TEXT, accountId TEXT, createdAt TEXT, updatedAt TEXT);`);
+    // A fresh install: nobody has signed up yet.
+    db.exec('DELETE FROM "user"; DELETE FROM "account";');
     db.query('INSERT INTO "user" (id, name, email, role, createdAt, updatedAt) VALUES (?, ?, ?, NULL, ?, ?)').run("u-first", "dawson", "dawson@users.krubot.invalid", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
     db.query('INSERT INTO "account" (id, userId, providerId, accountId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)').run("a1", "u-first", "credential", "u-first", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
     db.query('INSERT INTO "user" (id, name, email, role, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)').run("u-sso", "Sam", "sam@example.com", "user", "2026-02-01T00:00:00Z", "2026-02-01T00:00:00Z");
@@ -589,6 +610,114 @@ describe("data", () => {
       const res = await app.request(`/api/attachments/${posted.attachments[0]!.id}`);
       expect(res.headers.get("content-disposition")).toStartWith("attachment;");
       expect(res.headers.get("content-security-policy")).toBe("sandbox");
+    } finally {
+      box.stop(true);
+    }
+  });
+
+  test("another person's bots keep to their own team, apps, servers and secrets", async () => {
+    await seedUsers(["u-admin", "admin"], ["u-other", "user"]);
+    const { createBot, listBots } = await import("../src/data/bots.ts");
+    const { getThread, postMessage } = await import("../src/data/threads.ts");
+    const { getConnection, listConnections, saveConnection } = await import("../src/data/settings.ts");
+    const { createMcpServer, deleteMcpServer, mcpProxyToken } = await import("../src/data/mcp.ts");
+    const { allSecretValues, injectSecrets, listSecrets, setSecret } = await import("../src/data/secrets.ts");
+    const { adoptOrphans } = await import("../src/data/users.ts");
+    const { ensureKruDatabase } = await import("../src/db/init.ts");
+    const { composioKeySource, executeAction, toolsFor } = await import("../src/composio.ts");
+    const { connectionsRoutes } = await import("../src/routes/connections.ts");
+    const { mcpProxyRoutes, mcpRoutes } = await import("../src/routes/mcp.ts");
+    const { Hono } = await import("hono");
+    const { baseTools, loadTeamMemory } = await import("../src/tools.ts");
+    const { promptFor } = await import("../src/responder.ts");
+    const { systemPromptFor } = await import("../src/souls.ts");
+    const { allowedToolkits, usableBot } = await import("../src/toolkits.ts");
+    const { botInputSchema, mcpToolkit } = await import("@krubot/shared");
+    const read: string[] = [];
+    const box = Bun.serve({
+      port: 0,
+      fetch(request: Request): Response {
+        const path = new URL(request.url).searchParams.get("path") ?? "";
+        read.push(path);
+        if (path === ".team/MEMORY.md") return Response.json({ content: "Dylan is the Chief of Staff." });
+        return Response.json({ error: "No such file" }, { status: 404 });
+      },
+    });
+    try {
+      const config = { url: `http://127.0.0.1:${box.port}`, token: "t" };
+      // The file from before team memory was per person is the admin's, and nobody else's.
+      expect(await loadTeamMemory(config, "u-admin")).toBe("Dylan is the Chief of Staff.");
+      expect(await loadTeamMemory(config, "u-other")).toBeNull();
+      expect(read).toContain(".team/u-other/MEMORY.md");
+
+      // Connected apps are each person's own: the admin's Gmail is nothing to anyone else's bots.
+      saveConnection("u-admin", { toolkit: "gmail", name: "Gmail", accountId: "acc-admin", status: "active" });
+      const comet = createBot(botInputSchema.parse({ name: "Comet", toolkits: ["gmail"] }), "u-other");
+      expect(listConnections("u-other")).toEqual([]);
+      expect(await toolsFor("u-other", ["gmail"])).toEqual([]);
+      await expect(executeAction("u-other", "GMAIL_SEND_EMAIL", {}, "gmail")).rejects.toThrow();
+      const thread = getThread(comet.threadId)!;
+      const system = systemPromptFor(usableBot(comet), { bots: listBots({ includeHidden: true, userId: "u-other" }), thread, memory: null, memoryTruncated: false, teamMemory: null, connections: listConnections("u-other"), toolNotes: "", timezone: "UTC", skillsIndex: "", skills: [], mcpServers: [] });
+      expect(system).toContain("Nobody else yet");
+      expect(system).toContain("~/.team/u-other/MEMORY.md");
+      expect(system).not.toContain("Dylan");
+      expect(system).not.toContain("Gmail");
+
+      // Their bot connects apps in their own Composio project, once they add a key.
+      const context = { box: config, bot: comet, thread, message: { depth: 0 } as never, askBot: async () => "", syncSoul: async () => undefined };
+      expect(String(await baseTools(context).connect_app!.execute({ app: "gmail" }, "c"))).toContain("Composio API key");
+      const previous = process.env.COMPOSIO_API_KEY;
+      process.env.COMPOSIO_API_KEY = "server-key";
+      try {
+        // The server's key is the admin's fallback, never anyone else's.
+        expect(composioKeySource("u-admin")).toBe("server");
+        expect(composioKeySource("u-other")).toBeNull();
+        const other = asPerson(new Hono(), "u-other").route("/api", connectionsRoutes());
+        const saved = await other.request("/api/composio", { method: "PUT", body: JSON.stringify({ apiKey: "ak_other_123" }) });
+        expect(await saved.json()).toEqual({ source: "own" });
+        expect(await (await other.request("/api/composio")).text()).not.toContain("ak_other_123");
+        expect(composioKeySource("u-other")).toBe("own");
+        expect(composioKeySource("u-admin")).toBe("server");
+        expect(allSecretValues()).toContain("ak_other_123");
+        expect((await other.request("/api/composio", { method: "DELETE" })).status).toBe(200);
+        expect(composioKeySource("u-other")).toBeNull();
+      } finally {
+        if (previous === undefined) delete process.env.COMPOSIO_API_KEY;
+        else process.env.COMPOSIO_API_KEY = previous;
+      }
+
+      // Secrets and MCP servers are each person's own too.
+      setSecret("u-admin", "TOKEN", "admin-token-value");
+      const missing: string[] = [];
+      expect(injectSecrets("Bearer {{secret:TOKEN}}", "u-other", (name) => missing.push(name))).toBe("Bearer ");
+      expect(missing).toEqual(["TOKEN"]);
+      expect(injectSecrets("Bearer {{secret:TOKEN}}", "u-admin")).toBe("Bearer admin-token-value");
+      expect(listSecrets("u-other")).toEqual([]);
+      const adminServer = createMcpServer({ name: "private", transport: "http", url: "https://admin.example/mcp", headers: {}, args: [], env: {}, enabled: true }, "u-admin");
+      const theirs = createMcpServer({ name: "private", transport: "http", url: "https://other.example/mcp", headers: { Authorization: "{{secret:TOKEN}}" }, args: [], env: {}, enabled: true }, "u-other");
+      expect(allowedToolkits("u-other", ["gmail", "made-up", mcpToolkit(adminServer.id), mcpToolkit(theirs.id)])).toEqual(["gmail", mcpToolkit(theirs.id)]);
+      const routes = asPerson(new Hono(), "u-other").route("/api", mcpRoutes());
+      const listed = (await (await routes.request("/api/mcp-servers")).json()) as { servers: { id: string }[] };
+      expect(listed.servers.map((m) => m.id)).toEqual([theirs.id]);
+      expect((await routes.request(`/api/mcp-servers/${adminServer.id}`, { method: "PATCH", body: JSON.stringify({ enabled: false }) })).status).toBe(404);
+      expect((await routes.request(`/api/mcp-servers/${adminServer.id}`, { method: "DELETE" })).status).toBe(404);
+      // Their server's headers never get the admin's secret of the same name.
+      const proxy = new Hono().route("/api", mcpProxyRoutes());
+      const proxied = await proxy.request(`/api/mcp/${theirs.id}/mcp`, { method: "POST", headers: { "x-kru-mcp-token": mcpProxyToken(theirs.id)! }, body: "{}" });
+      expect(proxied.status).toBe(424);
+      deleteMcpServer(adminServer.id);
+      deleteMcpServer(theirs.id);
+
+      // What came from before there were people is the admin's.
+      ensureKruDatabase().query("INSERT INTO kru_connections (user_id, toolkit, name, account_id, status, created_at) VALUES (NULL, 'notion', 'Notion', 'acc-old', 'active', '2026-01-01T00:00:00Z')").run();
+      adoptOrphans("u-admin");
+      expect(getConnection("u-admin", "notion")?.accountId).toBe("acc-old");
+
+      // A hidden prompt's words reach the bot, though the history leaves it out.
+      const hello = postMessage({ threadId: comet.threadId, author: "system", kind: "prompt", body: "Greet the person as yourself." });
+      const prompt = promptFor(comet, thread, hello, [comet]);
+      expect(prompt).toContain("Greet the person as yourself.");
+      expect(prompt).not.toContain("system report");
     } finally {
       box.stop(true);
     }

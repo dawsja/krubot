@@ -36,7 +36,7 @@ const EMPTY: Form = { name: "", title: "", description: "", color: BOT_COLORS[0]
 
 /** Create or edit a bot: its name, job, how it works, how it looks, and what it may do. */
 export function BotDialog({ botId, onClose }: { botId: string | null; onClose: () => void }) {
-  const { bots, refresh, admin } = useStore();
+  const { bots, refresh } = useStore();
   const router = useRouter();
   const existing = botId ? bots.find((b) => b.id === botId) ?? null : null;
   const [form, setForm] = useState<Form>(existing ? pick(existing) : EMPTY);
@@ -169,7 +169,7 @@ export function BotDialog({ botId, onClose }: { botId: string | null; onClose: (
             <FieldSet>
               <FieldLegend variant="label">Connected apps this bot may use</FieldLegend>
               {connections.length === 0 && servers.length === 0 ? (
-                <FieldDescription>{admin ? "No apps connected yet. Connect Gmail, Slack, GitHub and more under Settings → Apps, or add your own MCP server there." : "Your admin hasn't shared any apps or MCP servers yet. Bots still have the shell, the browser and the skills."}</FieldDescription>
+                <FieldDescription>No apps connected yet. Add your Composio key and connect Gmail, Slack, GitHub and more under Settings → Apps, or add your own MCP server there.</FieldDescription>
               ) : (
                 <ToggleGroup multiple variant="pill" size="sm" value={form.toolkits} onValueChange={(v) => set("toolkits", v)} className="flex-wrap">
                   {connections.map((c) => (

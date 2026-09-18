@@ -13,9 +13,10 @@ import { getSettings } from "./data/settings.ts";
 import { getThread, postMessage, recentMessages, storeAttachment } from "./data/threads.ts";
 import type { DriverTool } from "./driver.ts";
 import { probeMcpServer } from "./mcp-oauth.ts";
-import { botHome, memoryPath, MAX_MEMORY_BYTES, TEAM_MEMORY_PATH } from "./memory.ts";
+import { botHome, LEGACY_TEAM_MEMORY_PATH, memoryPath, MAX_MEMORY_BYTES, teamDir, teamMemoryPath } from "./memory.ts";
 import { requestSecret } from "./secret-requests.ts";
 import { syncSkills } from "./skills.ts";
+import { ownerIsAdmin, usableBot } from "./toolkits.ts";
 
 /*
  * What a bot can do beyond its own computer. Every bot gets the team
@@ -44,9 +45,9 @@ export const TOOL_NOTES = [
   "message_bot posts to a teammate's own conversation (its 1:1 with the person) and returns at once; the teammate answers there. Use it to hand something over without waiting.",
   "create_routine schedules a prompt for yourself on a cron in the person's time zone, paused until they turn it on unless they asked for it in this conversation. list_routines shows yours.",
   "Connected-app tools (names starting with the app, like GMAIL_SEND_EMAIL) act on the person's real accounts. Reads go through; writes may wait for the person's approval. Say what you sent, created or changed.",
-  "team_memory_update replaces ~/.team/MEMORY.md, the memory every bot shares. Keep it to what the whole team needs.",
+  "team_memory_update replaces the team memory (its path is in the Team memory section), shared by every bot of the person. Keep it to what the whole team needs.",
   "use_skill returns a skill's full instructions by slug; save_skill adds a new one to the library (name, one-line description, Markdown instructions: steps, decision rules, expected output, what to check with the person first). Every teammate gets it at once.",
-  "connect_app connects an app for the team: it checks whether Kru can connect it through Composio (then starts it and posts the sign-in link). When the app isn't there but has an MCP server, use add_mcp_server with its URL (from the person, or its official docs; never guess one): it asks the person to approve, adds the server and gives it to you, and posts a Sign in card when the server needs one. Its tools reach you on your next reply; the person gives it to other bots in their profiles.",
+  "connect_app connects one of the person's own apps (in their Composio project): it checks whether Kru can connect it through Composio (then starts it and posts the sign-in link). When the app isn't there but has an MCP server, use add_mcp_server with its URL (from the person, or its official docs; never guess one): it asks the person to approve, adds the server and gives it to you, and posts a Sign in card when the server needs one. Its tools reach you on your next reply; the person gives it to other bots in their profiles.",
   "request_secret asks the person for a secret by name (like STRIPE_API_KEY) with a reason; the value is stored for injection and you never see it. list_secrets shows the names that exist.",
 ].join("\n");
 
@@ -196,8 +197,8 @@ export function baseTools(context: Context): Record<string, DriverTool> {
       },
     },
     send_file: {
-      description: "Hand the person a file from the computer: it appears in this conversation with a download button. Paths are relative to your home folder, or start with ~/ for the agent's home (like ~/.team/report.html).",
-      inputSchema: schema({ path: { type: "string", description: "The file, like report.pdf or ~/.team/hello-world.html." }, note: { type: "string", description: "A line to go with it, optional." } }, ["path"]),
+      description: "Hand the person a file from the computer: it appears in this conversation with a download button. Paths are relative to your home folder, or start with ~/ for the agent's home (like ~/.team/<team>/report.html).",
+      inputSchema: schema({ path: { type: "string", description: "The file, like report.pdf or ~/.team/<team>/hello-world.html." }, note: { type: "string", description: "A line to go with it, optional." } }, ["path"]),
       execute: async (input) => {
         const given = String(input.path ?? "").trim();
         if (!given) return "NOT sent: which file?";
@@ -241,13 +242,13 @@ export function baseTools(context: Context): Record<string, DriverTool> {
       },
     },
     team_memory_update: {
-      description: "Replace ~/.team/MEMORY.md, the memory shared by every bot on the team.",
+      description: `Replace ~/${teamMemoryPath(bot.userId)}, the memory shared by every bot on your person's team.`,
       inputSchema: schema({ content: { type: "string", description: "The whole new file." } }, ["content"]),
       execute: async (input) => {
         const content = String(input.content ?? "");
-        if (Buffer.byteLength(content, "utf8") > MAX_MEMORY_BYTES * 2) return `The team memory would be too long (${Buffer.byteLength(content, "utf8")} bytes). Keep it to what everyone needs; longer notes go in ~/.team/<topic>.md.`;
-        await writeBoxFile(box, TEAM_MEMORY_PATH, content);
-        return ".team/MEMORY.md saved for the whole team.";
+        if (Buffer.byteLength(content, "utf8") > MAX_MEMORY_BYTES * 2) return `The team memory would be too long (${Buffer.byteLength(content, "utf8")} bytes). Keep it to what everyone needs; longer notes go in ~/${teamDir(bot.userId)}/<topic>.md.`;
+        await writeBoxFile(box, teamMemoryPath(bot.userId), content);
+        return `${teamMemoryPath(bot.userId)} saved for the whole team.`;
       },
     },
     use_skill: {
@@ -294,18 +295,18 @@ export function baseTools(context: Context): Record<string, DriverTool> {
     list_secrets: {
       description: "The names of the stored secrets (never their values).",
       inputSchema: schema({}),
-      execute: async () => listSecrets().map((s) => `- ${s.name}`).join("\n") || "No secrets stored.",
+      execute: async () => listSecrets(bot.userId).map((s) => `- ${s.name}`).join("\n") || "No secrets stored.",
     },
     connect_app: {
-      description: "Connect an app for the team: looks it up among the apps Kru can connect (Composio); starts the connection and returns the sign-in link, or says how to attach it as an MCP server when it isn't there.",
+      description: "Connect one of the person's apps: looks it up among the apps Kru can connect (Composio); starts the connection and returns the sign-in link, or says how to attach it as an MCP server when it isn't there.",
       inputSchema: schema({ app: { type: "string", description: "The app, like notion, slack, github, linear." } }, ["app"]),
       execute: async (input) => {
         const wanted = String(input.app ?? "").trim().toLowerCase();
         if (!wanted) return "Which app?";
         const squash = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const already = listConnections().find((c) => squash(c.toolkit) === squash(wanted) || squash(c.name) === squash(wanted));
+        const already = listConnections(bot.userId).find((c) => squash(c.toolkit) === squash(wanted) || squash(c.name) === squash(wanted));
         if (already?.status === "active") return `${already.name} is already connected. Ask the person to add it to your profile (Settings → the bot → Connected apps) if you don't have its tools yet.`;
-        const mcp = listMcpServers().find((m) => squash(m.name) === squash(wanted));
+        const mcp = listMcpServers(bot.userId).find((m) => squash(m.name) === squash(wanted));
         if (mcp) {
           if (mcp.authStatus === "needed" && mcp.enabled) {
             postSignInCard(mcp);
@@ -313,12 +314,12 @@ export function baseTools(context: Context): Record<string, DriverTool> {
           }
           return `${mcp.name} is attached as an MCP server${mcp.enabled ? "" : " but turned off (Settings → Apps → MCP servers)"}.${notYours(mcp)}`;
         }
-        const catalog = await availableToolkits().catch(() => APP_CATALOG);
+        const catalog = await availableToolkits(bot.userId).catch(() => APP_CATALOG);
         const entry = catalog.find((a) => squash(a.toolkit) === squash(wanted) || squash(a.name) === squash(wanted) || squash(a.name).includes(squash(wanted)));
         if (entry) {
-          if (!composioConfigured()) return `${entry.name} can be connected through Composio, but no COMPOSIO_API_KEY is set on the API yet. Ask the person to add one (see .env.example) and connect ${entry.name} under Settings → Apps → Connected apps.`;
+          if (!composioConfigured(bot.userId)) return `${entry.name} can be connected through Composio, but the person hasn't added their Composio API key yet. Ask them to add it under Settings → Apps → Composio (a free key from composio.dev), then connect ${entry.name} there.`;
           try {
-            const started = await startConnection(entry.toolkit);
+            const started = await startConnection(bot.userId, entry.toolkit);
             if (started.redirectUrl) {
               postMessage({ threadId: thread.id, author: bot.id, body: `To connect ${entry.name}, sign in here: ${started.redirectUrl}`, depth, answered: true });
               return `Started. The sign-in link for ${entry.name} is posted in the conversation; once the person finishes, ask them to add ${entry.name} to your profile so you get its tools.`;
@@ -352,7 +353,7 @@ export function baseTools(context: Context): Record<string, DriverTool> {
         if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "NOT added: an MCP server's URL starts with https://.";
         if (parsed.username || parsed.password) return "NOT added: leave credentials out of the URL. When the server needs a key, ask for it with request_secret and tell the person to put it in the server's headers under Settings → Apps → MCP servers.";
         if (!name) return "NOT added: give the server a name, like the app's.";
-        const existing = listMcpServers().find((m) => m.name === name || m.url === parsed.href || m.url === url);
+        const existing = listMcpServers(bot.userId).find((m) => m.name === name || m.url === parsed.href || m.url === url);
         if (existing) {
           if (existing.authStatus === "needed" && existing.enabled) {
             postSignInCard(existing);
@@ -367,7 +368,7 @@ export function baseTools(context: Context): Record<string, DriverTool> {
         if (decision === "expired") return "NOT added: nobody approved it in time.";
         let server: McpServer;
         try {
-          server = createMcpServer(checked.data);
+          server = createMcpServer(checked.data, bot.userId);
         } catch (error) {
           return `NOT added: ${/UNIQUE/.test(String(error)) ? "a server with that name exists" : "the server couldn't be saved"}.`;
         }
@@ -461,7 +462,7 @@ export function chiefTools(context: Context): Record<string, DriverTool> {
         const takenLower = new Set(taken.map((n) => n.toLowerCase()));
         let name = patch.name ?? pickBotName(taken);
         for (let i = 2, base = name; takenLower.has(name.toLowerCase()); i += 1) name = `${base} ${i}`;
-        const connected = listConnections().filter((c) => c.status === "active");
+        const connected = listConnections(bot.userId).filter((c) => c.status === "active");
         const asked = Array.isArray(input.apps) ? input.apps.map((a) => String(a).toLowerCase().replace(/[^a-z0-9]/g, "")) : [];
         const toolkits = connected.filter((c) => asked.includes(c.toolkit) || asked.includes(c.name.toLowerCase().replace(/[^a-z0-9]/g, ""))).map((c) => c.toolkit);
         const missing = asked.filter((a) => !connected.some((c) => c.toolkit === a || c.name.toLowerCase().replace(/[^a-z0-9]/g, "") === a));
@@ -539,7 +540,7 @@ export async function appTools(context: Context): Promise<Record<string, DriverT
   const { bot, thread } = context;
   let tools: ComposioTool[] = [];
   try {
-    tools = await toolsFor(bot.toolkits);
+    tools = await toolsFor(bot.userId, usableBot(bot).toolkits);
   } catch (error) {
     console.warn(`[kru] connected apps unavailable for ${bot.name}: ${error instanceof Error ? error.message : error}`);
     return {};
@@ -557,7 +558,7 @@ export async function appTools(context: Context): Promise<Record<string, DriverT
           if (decision === "deny") return "NOT done: the person denied this action.";
           if (decision === "expired") return "NOT done: nobody approved this action in time.";
         }
-        const result = await executeAction(slug, input, tool.toolkit?.slug);
+        const result = await executeAction(bot.userId, slug, input, tool.toolkit?.slug);
         return clip(typeof result === "string" ? result : JSON.stringify(result, null, 1));
       },
     };
@@ -583,14 +584,18 @@ export async function loadMemory(box: BoxConfig, botId: string): Promise<{ text:
   }
 }
 
-/** The team's shared memory, as loaded into every prompt. */
-export async function loadTeamMemory(box: BoxConfig): Promise<string | null> {
-  try {
-    const file = await readBoxFile(box, TEAM_MEMORY_PATH);
-    return file.content ?? null;
-  } catch {
-    return null;
-  }
+/**
+ * A person's team memory, as loaded into every prompt of their bots. The
+ * admin's bots fall back to the file from before it was kept per person.
+ */
+export async function loadTeamMemory(box: BoxConfig, userId: string): Promise<string | null> {
+  const read = (path: string) =>
+    readBoxFile(box, path)
+      .then((file) => file.content ?? null)
+      .catch(() => null);
+  const own = await read(teamMemoryPath(userId));
+  if (own !== null || !ownerIsAdmin(userId)) return own;
+  return read(LEGACY_TEAM_MEMORY_PATH);
 }
 
 /** The recent lines of a thread as the CLI reads them. */

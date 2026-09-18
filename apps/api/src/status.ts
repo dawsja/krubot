@@ -51,7 +51,7 @@ export async function claudeStatus(box: BoxConfig | null, fresh = false): Promis
   }
 }
 
-export async function boxStatus(fresh = false): Promise<BoxStatus> {
+export async function boxStatus(userId: string, fresh = false): Promise<BoxStatus> {
   let box: BoxConfig | null = null;
   let configError: string | null = null;
   try {
@@ -59,14 +59,14 @@ export async function boxStatus(fresh = false): Promise<BoxStatus> {
   } catch (error) {
     configError = error instanceof Error ? error.message : "bad box config";
   }
-  const connections = listConnections();
+  const connections = listConnections(userId);
   if (!box) {
     return {
       configured: false,
       reachable: false,
       updating: false,
       claude: { status: "no-box", detail: configError ?? "No box is configured. Set KRU_BOX_URL." },
-      composio: { configured: composioConfigured(), connected: connections.filter((c) => c.status === "active").length },
+      composio: { configured: composioConfigured(userId), connected: connections.filter((c) => c.status === "active").length },
       agents: [],
       engines: null,
       versions: null,
@@ -93,7 +93,7 @@ export async function boxStatus(fresh = false): Promise<BoxStatus> {
     reachable,
     updating,
     claude: updating ? { status: "error", detail: "The computer is updating." } : reachable ? await claudeStatus(box, fresh) : { status: "error", detail: "The box isn't reachable. Is the box container running?" },
-    composio: { configured: composioConfigured(), connected: connections.filter((c) => c.status === "active").length },
+    composio: { configured: composioConfigured(userId), connected: connections.filter((c) => c.status === "active").length },
     agents,
     engines,
     versions,

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountSection } from "@/components/account-section";
+import { ComposioCard } from "@/components/composio-card";
 import { ComputerCard } from "@/components/computer-card";
 import { EngineCard } from "@/components/engine-card";
 import { McpCard } from "@/components/mcp-card";
@@ -27,7 +28,6 @@ import { Input } from "@/components/ui/input";
 import { PersonAvatar } from "@/components/bot-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { api, del, patch, post } from "@/lib/api";
 import type { SessionUser } from "@/lib/session";
@@ -53,7 +53,8 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
   const load = useCallback(async (fresh = false) => {
     const [s, st, cat, conn] = await Promise.all([
       api<{ settings: Settings }>("/api/settings").catch(() => null),
-      api<{ status: BoxStatus }>(`/api/status${fresh ? "?fresh=1" : ""}`).catch(() => null),
+      // The computer's status is the admin's; everyone has their own apps.
+      admin ? api<{ status: BoxStatus }>(`/api/status${fresh ? "?fresh=1" : ""}`).catch(() => null) : null,
       api<{ apps: AppCatalogEntry[] }>("/api/catalog").catch(() => null),
       api<{ configured: boolean; connections: Connection[] }>("/api/connections").catch(() => null),
     ]);
@@ -64,7 +65,7 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
       setConnections(conn.connections);
       setConfigured(conn.configured);
     }
-  }, []);
+  }, [admin]);
 
   useEffect(() => {
     const connected = params.get("connected");
@@ -74,12 +75,10 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
       if (connected) toast.add({ type: "success", title: `${appName(connected)} connected.` });
       if (mcp) toast.add({ type: "success", title: `Signed in to ${mcp}.`, description: "Its tools work for the bots it is given to from their next reply." });
       if (mcpError) toast.add({ type: "error", title: "MCP sign-in didn't complete.", description: mcpError });
-      // A user has only the account; the admin's data isn't theirs to load.
-      return admin ? load(Boolean(connected)) : undefined;
+      return load(Boolean(connected));
     });
-  }, [admin, load, params]);
+  }, [load, params]);
   useLiveEvents((event) => {
-    if (!admin) return;
     if (event.topic === "settings") void load();
     // When the update finishes, the box answers with its new versions.
     if (event.topic === "box") void load();
@@ -219,18 +218,17 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
     case "apps":
       body = (
         <>
+          <ComposioCard onChange={() => void load()} />
           <Card>
             <CardHeader>
               <CardTitle>Connected apps</CardTitle>
-              <CardDescription>Through Composio. Connect an app once here, then pick which bots may use it in each bot&apos;s profile. Reads go through; writes wait for your approval unless the bot has full access. An app is yours alone until you mark it shared; then every user&apos;s bots may be given it.</CardDescription>
+              <CardDescription>Through your Composio project. Connect an app once here, then pick which of your bots may use it in each bot&apos;s profile. Reads go through; writes wait for your approval unless the bot has full access.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {!configured ? (
                 <Alert>
-                  <AlertTitle>Composio isn&apos;t set up.</AlertTitle>
-                  <AlertDescription>
-                    Set <code className="font-mono">COMPOSIO_API_KEY</code> on the API (see .env.example) to connect apps. Bots can still use the browser and the shell without it.
-                  </AlertDescription>
+                  <AlertTitle>Add your Composio key to connect apps.</AlertTitle>
+                  <AlertDescription>Your bots can still use the browser, the shell and your MCP servers without it.</AlertDescription>
                 </Alert>
               ) : null}
               {catalog.length === 0 ? (
@@ -253,12 +251,6 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
                         </span>
                         {c ? (
                           <span className="flex items-center gap-1.5">
-                            {c.status === "active" ? (
-                              <label className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-                                Shared
-                                <Switch size="sm" checked={c.shared} onCheckedChange={(on) => void patch(`/api/connections/${app.toolkit}`, { shared: on }).then(() => load())} aria-label={`${app.name} shared with every user`} />
-                              </label>
-                            ) : null}
                             {c.status !== "active" ? (
                               <Button variant="outline" size="xs" onClick={() => void post(`/api/connections/${app.toolkit}/refresh`).then(() => load())}>
                                 Check

@@ -56,10 +56,10 @@ export function settingsRoutes() {
 
   app.get("/status", async (c) => {
     if (c.req.query("fresh") === "1") forgetClaudeCheck();
-    return c.json({ status: await boxStatus(c.req.query("fresh") === "1") });
+    return c.json({ status: await boxStatus(userId(c), c.req.query("fresh") === "1") });
   });
 
-  app.get("/catalog", async (c) => c.json({ apps: await availableToolkits(), all: APP_CATALOG }));
+  app.get("/catalog", async (c) => c.json({ apps: await availableToolkits(userId(c)), all: APP_CATALOG }));
 
   /**
    * Finishes onboarding in one call: remembers the apps and the picked

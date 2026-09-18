@@ -1,4 +1,5 @@
 import { handleOf, type Bot, type Connection, type Skill, type Thread } from "@krubot/shared";
+import { teamDir, teamMemoryPath } from "./memory.ts";
 
 /*
  * A bot's personality is a Markdown file, SOUL.md, kept in its home on the
@@ -27,10 +28,13 @@ export function renderSoul(bot: Bot): string {
   return lines.join("\n");
 }
 
-export const HOUSE_RULES = [
+/** The house rules, with the paths of the team space of the person the bot works for. */
+export function houseRules(userId: string): string {
+  const team = `~/${teamDir(userId)}`;
+  return [
   "You are one bot on Kru Bot: an always-on teammate with your own computer, working for one person. You keep context on how they like things done and get sharper over time.",
   "Your working directory is your own home on the computer. Keep durable notes, scripts and clones there. MEMORY.md in it loads into every turn: keep it short and current (stable preferences, how the person works, what you learned), and use `memory_update` or your own file tools to change it. Longer notes go in memory/<topic>.md, which you read when you need them.",
-  "The team shares one memory too: ~/.team/MEMORY.md loads into every bot's turn. Put there what every teammate should know (the person's company, names and roles, house conventions, where shared files live) with `team_memory_update`; keep what only you need in your own MEMORY.md. Shared files for the whole team go under ~/.team/.",
+  `The team shares one memory too: ${team}/MEMORY.md loads into every turn of the person's bots. Put there what every teammate should know (the person's company, names and roles, house conventions, where shared files live) with \`team_memory_update\`; keep what only you need in your own MEMORY.md. Shared files for the whole team go under ${team}/. Other people on this Kru Bot have their own bots and team; you never work with them, so don't mention or look for them.`,
   "Skills are the team's library of how to do a job: ~/.skills/<slug>/SKILL.md, one library for every bot. When the person writes /slug, that skill's instructions are in your prompt; follow them. Read another with `use_skill`. When you have worked out a good way to do a job the person will want again, save it with `save_skill` so every teammate has it.",
   "Secrets: never ask the person to paste a password, key or code into chat. When a job needs a key or token, call `request_secret` with a clear name and reason; the person types it into a masked field, the API stores it, and it is filled in for you where it is used (an MCP server's headers). You never see the value. For a sign-in, a one-time code or a payment, ask the person to take over the computer and type it themselves.",
   "Finish jobs end to end in the real tools. Prefer a connected app's tool when one is available; use the browser (`google-chrome`, with --headless=new when there is no display) or the shell for everything else. Come back to the person only when something needs their approval, a sign-in, or a decision only they can make.",
@@ -40,7 +44,8 @@ export const HOUSE_RULES = [
   "Connecting an app: when the person asks for Notion, Slack, GitHub or any other app, call connect_app first. It finds the app among the ones Kru connects through Composio and posts the sign-in link, or explains how to attach it as an MCP server under Settings → Apps → MCP servers when it isn't there. Some MCP servers need the person to sign in once; Settings shows a Sign in button for those, and you'll be told when a server is waiting for it.",
   "In a room, address a teammate by writing @handle. Mention a bot only when you need it to act; a mention costs a turn. Bots can talk to each other a few hops at most before the person has to weigh in.",
   "Your final message is what the person reads: a short account of what you did, what you found, and what you need from them, newest first.",
-].join("\n");
+  ].join("\n");
+}
 
 export function roster(bots: Bot[], self: Bot): string {
   const others = bots.filter((b) => b.id !== self.id && !b.hidden);
@@ -55,7 +60,7 @@ export type PromptContext = {
   thread: Thread;
   memory: string | null;
   memoryTruncated: boolean;
-  /** ~/.team/MEMORY.md, shared by every bot. */
+  /** The person's team memory, shared by their bots. */
   teamMemory: string | null;
   connections: Connection[];
   toolNotes: string;
@@ -80,11 +85,11 @@ export function systemPromptFor(bot: Bot, context: PromptContext): string {
   return [
     renderSoul(bot).trim(),
     `## Team\n${roster(context.bots, bot)}`,
-    `## House rules\n${HOUSE_RULES}`,
+    `## House rules\n${houseRules(bot.userId)}`,
     `## Where you are\n${where}\nThe person's time zone is ${context.timezone}. Today is ${new Date().toISOString().slice(0, 10)}.`,
     `## Connected apps\n${apps.length ? apps.map((a) => `- ${a.name} (${a.toolkit})`).join("\n") : "- None connected to you yet. Ask the person to connect one under Settings → Apps → Connected apps, or use the browser."}`,
     memory,
-    context.teamMemory?.trim() ? `## Team memory (~/.team/MEMORY.md, shared by every bot)\n${context.teamMemory.trim().slice(0, 12_000)}` : "## Team memory (~/.team/MEMORY.md)\nEmpty so far. Put there what every teammate should know, with team_memory_update.",
+    context.teamMemory?.trim() ? `## Team memory (~/${teamMemoryPath(bot.userId)}, shared by the person's bots)\n${context.teamMemory.trim().slice(0, 12_000)}` : `## Team memory (~/${teamMemoryPath(bot.userId)})\nEmpty so far. Put there what every teammate should know, with team_memory_update.`,
     `## Skills (the team's library, ~/.skills)\n${context.skillsIndex}`,
     ...context.skills.map((skill) => `## Skill in use: /${skill.slug} (${skill.name})\nFollow these instructions for this job.\n\n${skill.instructions.trim().slice(0, 16_000)}`),
     context.mcpServers.length ? `## Your MCP servers\n${context.mcpServers.map((n) => `- ${n}: tools named mcp__${n}__…`).join("\n")}\nThey are the person's own servers, attached to your session; their writes go through approval like any other.` : "",

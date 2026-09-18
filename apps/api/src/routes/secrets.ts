@@ -1,12 +1,12 @@
 import { SECRET_NAME } from "@krubot/shared";
 import { Hono } from "hono";
-import { ownThread } from "../access.ts";
+import { ownThread, userId } from "../access.ts";
 import type { Env } from "../app.ts";
 import { deleteSecret, getSecretRequest, listSecrets, resolveSecretRequest, setSecret } from "../data/secrets.ts";
 import { answerSecretRequest } from "../secret-requests.ts";
 
 /*
- * Secrets: names in, names out, never a value out. A bot's request is
+ * Your secrets: names in, names out, never a value out. A bot's request is
  * answered here too: the value goes straight into the store and the bot
  * only hears that it's there.
  */
@@ -14,21 +14,21 @@ import { answerSecretRequest } from "../secret-requests.ts";
 export function secretsRoutes() {
   const app = new Hono<Env>();
 
-  app.get("/secrets", (c) => c.json({ secrets: listSecrets() }));
+  app.get("/secrets", (c) => c.json({ secrets: listSecrets(userId(c)) }));
 
   app.put("/secrets/:name", async (c) => {
     const name = c.req.param("name");
     if (!SECRET_NAME.test(name)) return c.json({ error: "A secret's name is letters, digits and underscores, like OPENAI_API_KEY" }, 400);
     const body = (await c.req.json().catch(() => ({}))) as { value?: string };
     try {
-      setSecret(name, String(body.value ?? ""));
+      setSecret(userId(c), name, String(body.value ?? ""));
       return c.json({ ok: true });
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : "Could not save" }, 400);
     }
   });
 
-  app.delete("/secrets/:name", (c) => (deleteSecret(c.req.param("name")) ? c.body(null, 204) : c.json({ error: "No such secret" }, 404)));
+  app.delete("/secrets/:name", (c) => (deleteSecret(userId(c), c.req.param("name")) ? c.body(null, 204) : c.json({ error: "No such secret" }, 404)));
 
   app.get("/secret-requests/:id", (c) => {
     const request = getSecretRequest(c.req.param("id"));
@@ -43,7 +43,7 @@ export function secretsRoutes() {
     const body = (await c.req.json().catch(() => ({}))) as { value?: string; decline?: boolean };
     if (body.decline) return c.json({ request: answerSecretRequest(request.id, "declined") });
     try {
-      setSecret(request.name, String(body.value ?? ""), request.botId);
+      setSecret(userId(c), request.name, String(body.value ?? ""), request.botId);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : "Could not save" }, 400);
     }

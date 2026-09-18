@@ -58,7 +58,7 @@ export function McpCard() {
     <Card>
       <CardHeader>
         <CardTitle>MCP servers</CardTitle>
-        <CardDescription>Your own tool servers, next to the connected apps. An HTTP server is reached through Kru&apos;s API, which fills in its headers and secrets, so the bots never hold them; when a server wants you signed in (Robinhood, Linear and others do), a Sign in button appears and the API keeps the tokens. A command runs on the computer itself. Give a server to a bot in the bot&apos;s profile, under Connected apps; a bot that adds one gets it itself.</CardDescription>
+        <CardDescription>Your own tool servers, next to the connected apps. An HTTP server is reached through Kru&apos;s API, which fills in its headers and secrets, so the bots never hold them; when a server wants you signed in (Robinhood, Linear and others do), a Sign in button appears and the API keeps the tokens. A command runs on the computer itself. Your servers are yours alone: nobody else sees them or can give them to their bots. Give a server to a bot in the bot&apos;s profile, under Connected apps; a bot that adds one gets it itself.</CardDescription>
         <CardAction>
           <Button size="sm" onClick={() => setEditing("new")}>
             <Plus data-icon="inline-start" aria-hidden="true" />
@@ -110,10 +110,6 @@ export function McpCard() {
                   </TooltipTrigger>
                   <TooltipContent>Delete</TooltipContent>
                 </Tooltip>
-                <label className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-                  Shared
-                  <Switch size="sm" checked={server.shared} onCheckedChange={(on) => void patch(`/api/mcp-servers/${server.id}`, { shared: on }).then(load)} aria-label={`${server.name} shared with every user`} />
-                </label>
                 <Switch size="sm" checked={server.enabled} onCheckedChange={(on) => void patch(`/api/mcp-servers/${server.id}`, { enabled: on }).then(load)} aria-label={`${server.name} on or off`} />
               </li>
             ))}

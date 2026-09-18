@@ -18,7 +18,7 @@ function pending(): Map<string, Pending> {
 }
 
 export async function requestSecret(input: { bot: Bot; threadId: string; name: string; reason: string }): Promise<SecretRequest["status"] | "exists"> {
-  if (hasSecret(input.name)) return "exists";
+  if (hasSecret(input.bot.userId, input.name)) return "exists";
   const request = createSecretRequest({ botId: input.bot.id, threadId: input.threadId, name: input.name, reason: input.reason });
   postMessage({ threadId: input.threadId, author: input.bot.id, kind: "secret", body: `${input.name}: ${input.reason}`, approvalId: request.id, answered: true });
   if (input.bot.notify) void sendPush({ title: `${input.bot.name} needs a secret`, body: `${input.name}: ${input.reason}`.slice(0, 140), url: `/app/t/${input.threadId}`, tag: input.threadId, threadId: input.threadId }, input.bot.userId);

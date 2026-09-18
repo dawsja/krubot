@@ -1,26 +1,14 @@
-import { BOT_TEMPLATES, botInputSchema, botPatchSchema, mcpToolkit, pickBotName } from "@krubot/shared";
+import { BOT_TEMPLATES, botInputSchema, botPatchSchema, pickBotName } from "@krubot/shared";
 import { Hono } from "hono";
-import { admin, ownBot, userId } from "../access.ts";
+import { ownBot, userId } from "../access.ts";
 import type { Env } from "../app.ts";
 import { boxConfig, deleteBotHome } from "../box.ts";
 import { createBot, deleteBot, listBots, updateBot } from "../data/bots.ts";
 import { listRules, removeRule } from "../data/approvals.ts";
-import { listMcpServers } from "../data/mcp.ts";
-import { listConnections } from "../data/settings.ts";
 import { clearThread, postMessage } from "../data/threads.ts";
 import { interrupt, syncSoul } from "../responder.ts";
 import { addFromTemplate, greet, templateById } from "../templates.ts";
-
-/**
- * The apps and MCP servers a person may give a bot: the admin's bots can
- * have any, everyone else's only the ones the admin shared. Anything else
- * asked for is dropped, quietly, as an unknown toolkit would be.
- */
-function allowedToolkits(isAdmin: boolean, toolkits: string[]): string[] {
-  if (isAdmin) return toolkits;
-  const allowed = new Set<string>([...listConnections().filter((c) => c.shared).map((c) => c.toolkit), ...listMcpServers().filter((s) => s.shared).map((s) => mcpToolkit(s.id))]);
-  return toolkits.filter((t) => allowed.has(t));
-}
+import { allowedToolkits } from "../toolkits.ts";
 
 export function botsRoutes() {
   const app = new Hono<Env>();
@@ -34,7 +22,7 @@ export function botsRoutes() {
   app.post("/bots", async (c) => {
     const parsed = botInputSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Bad bot" }, 400);
-    const bot = createBot({ ...parsed.data, toolkits: allowedToolkits(admin(c), parsed.data.toolkits) }, userId(c));
+    const bot = createBot({ ...parsed.data, toolkits: allowedToolkits(userId(c), parsed.data.toolkits) }, userId(c));
     postMessage({ threadId: bot.threadId, author: "system", kind: "event", body: `${bot.name} joined${bot.title ? ` as ${bot.title}` : ""}.`, answered: true });
     await syncSoul(bot);
     greet(bot);
@@ -45,7 +33,7 @@ export function botsRoutes() {
     const body = (await c.req.json().catch(() => ({}))) as { templateId?: string; toolkits?: string[]; enableRoutine?: boolean };
     const template = templateById(String(body.templateId ?? ""));
     if (!template) return c.json({ error: "No such template" }, 404);
-    const bot = await addFromTemplate(template, userId(c), { toolkits: allowedToolkits(admin(c), Array.isArray(body.toolkits) ? body.toolkits.map(String) : template.toolkits), enableRoutine: body.enableRoutine === true });
+    const bot = await addFromTemplate(template, userId(c), { toolkits: allowedToolkits(userId(c), Array.isArray(body.toolkits) ? body.toolkits.map(String) : template.toolkits), enableRoutine: body.enableRoutine === true });
     return c.json({ bot }, 201);
   });
 
@@ -63,7 +51,7 @@ export function botsRoutes() {
     if (typeof body.pinned === "boolean") extra.pinned = body.pinned;
     if (typeof body.position === "number") extra.position = body.position;
     if (!ownBot(c, c.req.param("id"))) return c.json({ error: "No such bot" }, 404);
-    const toolkits = parsed.data.toolkits !== undefined ? { toolkits: allowedToolkits(admin(c), parsed.data.toolkits) } : {};
+    const toolkits = parsed.data.toolkits !== undefined ? { toolkits: allowedToolkits(userId(c), parsed.data.toolkits) } : {};
     const bot = updateBot(c.req.param("id"), { ...parsed.data, ...toolkits, ...extra });
     if (!bot) return c.json({ error: "No such bot" }, 404);
     await syncSoul(bot);

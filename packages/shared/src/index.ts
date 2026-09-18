@@ -306,19 +306,21 @@ export type Connection = {
   /** Composio connected account id. */
   accountId: string;
   status: "active" | "pending" | "failed";
-  /** Whether every user's bots may use it, or only the admin's. */
-  shared: boolean;
   createdAt: string;
 };
+
+/** Whether a person can connect apps: their own Composio key, the server's (the admin only), or none yet. */
+export type ComposioKeyStatus = { source: "own" | "server" | null };
 
 // ---------- people ----------
 
 /**
  * Who can do what. The first account, made with the setup token, is the
- * admin: it owns the server-wide settings (the AI, the computer, the apps,
- * the skills, the secrets, who may sign in). Everyone who arrives through
- * the OIDC provider is a user: their own bots and conversations, nothing
- * else. Bots are never shared between people.
+ * admin: it owns the server-wide settings (the AI, the computer, the
+ * skills, who may sign in). Everyone who arrives through the OIDC provider
+ * is a user. Everyone, the admin included, has their own bots,
+ * conversations, connected apps (with their own Composio key), MCP servers
+ * and secrets; none of those are shared between people.
  */
 export const USER_ROLES = ["admin", "user"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
@@ -773,8 +775,6 @@ export const mcpServerInputSchema = z.object({
   enabled: z.boolean().default(true),
   /** http: where the sign-in sends the browser back; left out, the default for its host. */
   oauthRedirect: z.enum(["app", "localhost"]).optional(),
-  /** Whether every user's bots may be given it, or only the admin's. */
-  shared: z.boolean().default(false),
 });
 export type McpServerInput = z.infer<typeof mcpServerInputSchema>;
 

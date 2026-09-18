@@ -73,39 +73,43 @@ export function updateSettings(patch: Partial<Settings>): Settings {
 
 // ---------- connected apps ----------
 
-type ConnectionRow = { toolkit: string; name: string; account_id: string; status: string; shared: number; created_at: string };
+/*
+ * Each person's own: a connection is an account in the Composio project of
+ * the person's key, and only their bots may be given it.
+ */
+
+type ConnectionRow = { user_id: string; toolkit: string; name: string; account_id: string; status: string; created_at: string };
 
 function toConnection(row: ConnectionRow): Connection {
-  return { toolkit: row.toolkit, name: row.name, accountId: row.account_id, status: row.status as Connection["status"], shared: row.shared === 1, createdAt: row.created_at };
+  return { toolkit: row.toolkit, name: row.name, accountId: row.account_id, status: row.status as Connection["status"], createdAt: row.created_at };
 }
 
-export function listConnections(): Connection[] {
-  const rows = ensureKruDatabase().query("SELECT * FROM kru_connections ORDER BY created_at").all() as ConnectionRow[];
+export function listConnections(userId: string): Connection[] {
+  const rows = ensureKruDatabase().query("SELECT * FROM kru_connections WHERE user_id = ? ORDER BY created_at").all(userId) as ConnectionRow[];
   return rows.map(toConnection);
 }
 
-export function getConnection(toolkit: string): Connection | null {
-  const row = ensureKruDatabase().query("SELECT * FROM kru_connections WHERE toolkit = ?").get(toolkit) as ConnectionRow | null;
+export function getConnection(userId: string, toolkit: string): Connection | null {
+  const row = ensureKruDatabase().query("SELECT * FROM kru_connections WHERE user_id = ? AND toolkit = ?").get(userId, toolkit) as ConnectionRow | null;
   return row ? toConnection(row) : null;
 }
 
-export function saveConnection(input: { toolkit: string; name: string; accountId: string; status: Connection["status"] }): Connection {
+export function saveConnection(userId: string, input: { toolkit: string; name: string; accountId: string; status: Connection["status"] }): Connection {
   ensureKruDatabase()
-    .query("INSERT INTO kru_connections (toolkit, name, account_id, status, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(toolkit) DO UPDATE SET name = excluded.name, account_id = excluded.account_id, status = excluded.status")
-    .run(input.toolkit, input.name, input.accountId, input.status, now());
+    .query("INSERT INTO kru_connections (user_id, toolkit, name, account_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, toolkit) DO UPDATE SET name = excluded.name, account_id = excluded.account_id, status = excluded.status")
+    .run(userId, input.toolkit, input.name, input.accountId, input.status, now());
   settingsChanged();
-  return getConnection(input.toolkit)!;
+  return getConnection(userId, input.toolkit)!;
 }
 
-/** Whether every user's bots may use the app, or only the admin's. */
-export function setConnectionShared(toolkit: string, shared: boolean): Connection | null {
-  const changed = ensureKruDatabase().query("UPDATE kru_connections SET shared = ? WHERE toolkit = ?").run(shared ? 1 : 0, toolkit).changes;
-  if (changed) settingsChanged();
-  return getConnection(toolkit);
-}
-
-export function removeConnection(toolkit: string): boolean {
-  const changed = ensureKruDatabase().query("DELETE FROM kru_connections WHERE toolkit = ?").run(toolkit).changes;
+export function removeConnection(userId: string, toolkit: string): boolean {
+  const changed = ensureKruDatabase().query("DELETE FROM kru_connections WHERE user_id = ? AND toolkit = ?").run(userId, toolkit).changes;
   if (changed) settingsChanged();
   return changed > 0;
+}
+
+/** Forgets every connection of a person's, when their key points at another Composio project. */
+export function removeConnections(userId: string): void {
+  const changed = ensureKruDatabase().query("DELETE FROM kru_connections WHERE user_id = ?").run(userId).changes;
+  if (changed) settingsChanged();
 }

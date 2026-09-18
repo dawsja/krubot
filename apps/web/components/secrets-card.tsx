@@ -60,7 +60,7 @@ export function SecretsCard() {
       <CardHeader>
         <CardTitle>Secrets</CardTitle>
         <CardDescription>
-          Keys and tokens the bots use but never see. A bot asks for one with a card in its conversation; you type it into a masked field here or there; Kru stores it encrypted and fills it in where it&apos;s used, such as an MCP server&apos;s headers as {"{{secret:NAME}}"}. Anything a bot writes is scrubbed of these values. Passwords, one-time codes and payments are different: take over the computer and type those yourself.
+          Your keys and tokens, which your bots use but never see. They are yours alone: only your MCP servers are filled from them. A bot asks for one with a card in its conversation; you type it into a masked field here or there; Kru stores it encrypted and fills it in where it&apos;s used, such as an MCP server&apos;s headers as {"{{secret:NAME}}"}. Anything a bot writes is scrubbed of these values. Passwords, one-time codes and payments are different: take over the computer and type those yourself.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

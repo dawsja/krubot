@@ -24,9 +24,9 @@ export type Env = { Variables: { session: Session } };
  * The API. Everything under /api needs a signed-in person, except the auth
  * routes, registration, the sign-in page's view of the auth setup, and
  * the health check. Unsafe methods must be same-origin. Server-wide
- * settings (the AI, the computer, the apps, the skills, the secrets, who
- * may sign in) are the admin's; bots and conversations are each person's
- * own, the admin's included.
+ * settings (the AI, the computer, the skills, who may sign in) are the
+ * admin's; bots, conversations, connected apps, MCP servers and secrets
+ * are each person's own, the admin's included.
  */
 export function createApp() {
   const app = new Hono<Env>();
@@ -67,13 +67,14 @@ export function createApp() {
     await next();
   });
 
-  // The admin's areas. Reads that everyone needs (the shared apps and MCP
-  // servers a bot may be given, the skills index, a reduced settings view)
-  // stay open and are narrowed inside their routes.
-  for (const path of ["/api/box", "/api/box/*", "/api/status", "/api/catalog", "/api/onboarding/*", "/api/secrets", "/api/secrets/*", "/api/providers", "/api/providers/*", "/api/users", "/api/users/*", "/api/oidc", "/api/oidc/*", "/api/bots/:id/files", "/api/mcp-servers/oauth/*", "/api/connections/callback"]) {
+  // The admin's areas. Reads that everyone needs (the skills index, a
+  // reduced settings view) stay open and are narrowed inside their routes.
+  // Connected apps, MCP servers and secrets are each person's own and
+  // answer only for the signed-in person.
+  for (const path of ["/api/box", "/api/box/*", "/api/status", "/api/onboarding/*", "/api/providers", "/api/providers/*", "/api/users", "/api/users/*", "/api/oidc", "/api/oidc/*", "/api/bots/:id/files"]) {
     app.use(path, requireAdmin);
   }
-  app.on(["POST", "PATCH", "PUT", "DELETE"], ["/api/settings", "/api/skills", "/api/skills/*", "/api/mcp-servers", "/api/mcp-servers/*", "/api/connections", "/api/connections/*"], requireAdmin);
+  app.on(["POST", "PATCH", "PUT", "DELETE"], ["/api/settings", "/api/skills", "/api/skills/*"], requireAdmin);
 
   app.get("/api/me", (c) => {
     const session = c.get("session");

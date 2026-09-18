@@ -2,7 +2,7 @@ import { mcpToolkit, type Bot, type McpServer } from "@krubot/shared";
 import { listMcpServers, mcpProxyToken } from "./data/mcp.ts";
 
 /*
- * What the box gets for each of your MCP servers when it starts a bot's
+ * What the box gets for each of a person's MCP servers when it starts a bot's
  * session: the ones given to that bot (`mcp:<id>` in its toolkits). HTTP servers point at the API's proxy with their
  * proxy token; the real URL, headers and secrets stay here. Stdio servers
  * run on the box as given.
@@ -15,12 +15,12 @@ export function apiInternalUrl(): string {
   return (process.env.KRU_API_INTERNAL_URL ?? `http://127.0.0.1:${process.env.PORT || 8790}`).replace(/\/$/, "");
 }
 
-/** The enabled servers a bot was given. */
-export function mcpServersFor(bot: Pick<Bot, "toolkits">): McpServer[] {
-  return listMcpServers().filter((server) => server.enabled && bot.toolkits.includes(mcpToolkit(server.id)));
+/** The enabled servers of the bot's owner that the bot was given. */
+export function mcpServersFor(bot: Pick<Bot, "toolkits" | "userId">): McpServer[] {
+  return listMcpServers(bot.userId).filter((server) => server.enabled && bot.toolkits.includes(mcpToolkit(server.id)));
 }
 
-export function boxMcpServers(bot: Pick<Bot, "toolkits">): BoxMcpServer[] {
+export function boxMcpServers(bot: Pick<Bot, "toolkits" | "userId">): BoxMcpServer[] {
   return mcpServersFor(bot).map(toBoxServer);
 }
 

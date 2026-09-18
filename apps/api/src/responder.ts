@@ -12,11 +12,12 @@ import { cliTurn } from "./driver.ts";
 import { EngineSetupError, engineRun } from "./engines.ts";
 import { activity } from "./events.ts";
 import { boxMcpServers, mcpServersFor } from "./mcp.ts";
-import { soulPath, TEAM_MEMORY_PATH } from "./memory.ts";
+import { soulPath } from "./memory.ts";
 import { sendPush } from "./push.ts";
 import { createRedactor, redact } from "./redact.ts";
 import { skillsFor, skillsIndex } from "./skills.ts";
 import { renderSoul, systemPromptFor } from "./souls.ts";
+import { usableBot } from "./toolkits.ts";
 import { appTools, baseTools, CHIEF_TOOL_NOTES, chiefTools, loadMemory, loadTeamMemory, MAX_CHAIN, permissionTool, TOOL_NOTES, transcript } from "./tools.ts";
 
 /*
@@ -116,7 +117,7 @@ function textAttachments(message: Message): string {
   return parts.join("\n");
 }
 
-function promptFor(bot: Bot, thread: Thread, message: Message, bots: Bot[]): string {
+export function promptFor(bot: Bot, thread: Thread, message: Message, bots: Bot[]): string {
   const names = new Map(bots.map((b) => [b.id, b.name]));
   const who =
     message.author === "you"
@@ -128,6 +129,10 @@ function promptFor(bot: Bot, thread: Thread, message: Message, bots: Bot[]): str
           : `${names.get(message.author) ?? message.author}, a teammate`;
   const history = transcript(thread, bots, bot, message, CONTEXT_LINES);
   const files = textAttachments(message);
+  // A hidden prompt isn't part of the conversation's history, so its words go here.
+  if (message.kind === "prompt") {
+    return [`The conversation so far (newest last):\n${history || "(nothing yet)"}`, `Kru Bot, not the person, asks you this; nobody else sees it. Do it, and address your answer to the person:\n${message.body}`].join("\n\n");
+  }
   const from = message.fromThreadId && message.author !== "you" ? `\n\nThis message came from ${names.get(message.author) ?? "a teammate"}. Do the work it asks for and answer with the result; your answer goes back to them.` : "";
   return [
     `The conversation so far (newest last):\n${history}`,
@@ -167,10 +172,12 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message): Promi
   let reply = "";
   try {
     await ensureBotHome(box, bot.id);
-    const [memory, teamMemory] = await Promise.all([loadMemory(box, bot.id), loadTeamMemory(box)]);
+    const [memory, teamMemory] = await Promise.all([loadMemory(box, bot.id), loadTeamMemory(box, bot.userId)]);
     const settings = getSettings();
     const skills = listSkills();
-    const mcpServers = boxMcpServers(bot);
+    // The apps and servers its owner may use: un-sharing one takes it away here.
+    const usable = usableBot(bot);
+    const mcpServers = boxMcpServers(usable);
     // What a bot writes never carries a stored secret, whatever it managed to read.
     const hide = createRedactor(allSecretValues());
     const tools = {
@@ -179,18 +186,18 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message): Promi
       ...(await appTools(context)),
       permission: permissionTool(context),
     };
-    const instructions = systemPromptFor(bot, {
+    const instructions = systemPromptFor(usable, {
       bots,
       thread,
       memory: memory.text,
       memoryTruncated: memory.truncated,
       teamMemory,
-      connections: listConnections(),
+      connections: listConnections(bot.userId),
       toolNotes: bot.isChief ? `${TOOL_NOTES}\n${CHIEF_TOOL_NOTES}` : TOOL_NOTES,
       timezone: settings.timezone,
       skillsIndex: skillsIndex(skills),
       skills: skillsFor(message.body, skills),
-      mcpServers: mcpServersFor(bot).map((m) => (m.authStatus === "needed" ? `${m.name} (waiting for the person to sign in: Settings → Apps → MCP servers → ${m.name} → Sign in; its tools fail until then)` : m.authStatus === "error" ? `${m.name} (sign-in problem: ${m.authError ?? "unknown"})` : m.name)),
+      mcpServers: mcpServersFor(usable).map((m) => (m.authStatus === "needed" ? `${m.name} (waiting for the person to sign in: Settings → Apps → MCP servers → ${m.name} → Sign in; its tools fail until then)` : m.authStatus === "error" ? `${m.name} (sign-in problem: ${m.authError ?? "unknown"})` : m.name)),
     });
     // One engine, model and effort for the whole team, chosen under Settings → AI.
     const run = engineRun(settings);

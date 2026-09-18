@@ -1,50 +1,77 @@
+import type { ComposioKeyStatus } from "@krubot/shared";
 import { Hono } from "hono";
-import { admin } from "../access.ts";
+import { userId } from "../access.ts";
 import type { Env } from "../app.ts";
 import { appUrl } from "../config.ts";
-import { composioConfigured, disconnect, offeredToolkits, refreshConnection, startConnection } from "../composio.ts";
-import { listConnections, setConnectionShared } from "../data/settings.ts";
+import { composioKey, composioKeySource, disconnect, forgetComposioCache, offeredToolkits, refreshConnection, startConnection } from "../composio.ts";
+import { clearComposioKey, setComposioKey } from "../data/composio-keys.ts";
+import { listConnections, removeConnections } from "../data/settings.ts";
+
+/*
+ * Your connected apps, in your own Composio project: your key (write-only),
+ * the connections made with it, and the callback Composio sends you back
+ * to. Nobody sees or uses anyone else's.
+ */
+
+function keyChanged(me: string, before: string | null) {
+  if (composioKey(me) === before) return;
+  removeConnections(me);
+  forgetComposioCache(me);
+}
 
 export function connectionsRoutes() {
   const app = new Hono<Env>();
 
-  app.get("/connections", (c) => {
-    if (admin(c)) return c.json({ configured: composioConfigured(), connections: listConnections() });
-    // A user sees the apps the admin shared, enough to pick them for a bot.
-    return c.json({ configured: composioConfigured(), connections: listConnections().filter((x) => x.shared && x.status === "active").map((x) => ({ ...x, accountId: "" })) });
+  app.get("/connections", (c) => c.json({ configured: composioKeySource(userId(c)) !== null, connections: listConnections(userId(c)) }));
+
+  app.get("/composio", (c) => c.json({ source: composioKeySource(userId(c)) } satisfies ComposioKeyStatus));
+
+  /** Your key. A different key forgets the connections made with the old one: they live in its project. */
+  app.put("/composio", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { apiKey?: unknown };
+    if (typeof body.apiKey !== "string" || !body.apiKey.trim()) return c.json({ error: "Paste your Composio API key" }, 400);
+    const me = userId(c);
+    const before = composioKey(me);
+    try {
+      setComposioKey(me, body.apiKey);
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : "Could not save the key" }, 400);
+    }
+    keyChanged(me, before);
+    return c.json({ source: composioKeySource(me) } satisfies ComposioKeyStatus);
   });
 
-  /** Whether every user's bots may use the app. */
-  app.patch("/connections/:toolkit", async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { shared?: unknown };
-    if (typeof body.shared !== "boolean") return c.json({ error: "Say whether it is shared" }, 400);
-    const connection = setConnectionShared(c.req.param("toolkit").toLowerCase(), body.shared);
-    return connection ? c.json({ connection }) : c.json({ error: "Not connected" }, 404);
+  app.delete("/composio", (c) => {
+    const me = userId(c);
+    const before = composioKey(me);
+    if (!clearComposioKey(me)) return c.json({ error: "No key saved" }, 404);
+    keyChanged(me, before);
+    return c.json({ source: composioKeySource(me) } satisfies ComposioKeyStatus);
   });
 
   app.post("/connections/:toolkit/connect", async (c) => {
     const toolkit = c.req.param("toolkit").toLowerCase();
     if (!offeredToolkits().some((a) => a.toolkit === toolkit)) return c.json({ error: "That app isn't in the catalog" }, 404);
     try {
-      return c.json(await startConnection(toolkit));
+      return c.json(await startConnection(userId(c), toolkit));
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : "Could not start the connection" }, 502);
     }
   });
 
   app.post("/connections/:toolkit/refresh", async (c) => {
-    const connection = await refreshConnection(c.req.param("toolkit").toLowerCase());
+    const connection = await refreshConnection(userId(c), c.req.param("toolkit").toLowerCase());
     return connection ? c.json({ connection }) : c.json({ error: "Not connected" }, 404);
   });
 
   /** Where Composio sends the browser back after OAuth. */
   app.get("/connections/callback", async (c) => {
     const toolkit = (c.req.query("toolkit") ?? "").toLowerCase();
-    if (toolkit) await refreshConnection(toolkit);
+    if (toolkit) await refreshConnection(userId(c), toolkit);
     return c.redirect(`${appUrl()}/app/settings/apps?connected=${encodeURIComponent(toolkit)}`);
   });
 
-  app.delete("/connections/:toolkit", async (c) => ((await disconnect(c.req.param("toolkit").toLowerCase())) ? c.body(null, 204) : c.json({ error: "Not connected" }, 404)));
+  app.delete("/connections/:toolkit", async (c) => ((await disconnect(userId(c), c.req.param("toolkit").toLowerCase())) ? c.body(null, 204) : c.json({ error: "Not connected" }, 404)));
 
   return app;
 }

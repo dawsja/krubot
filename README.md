@@ -29,7 +29,8 @@ It is not affiliated with xAI, Meta or Anthropic.
   edits, or full access. Shell commands, file changes and connected-app
   writes land as cards in the conversation: allow once, always allow, deny.
 - **Connected apps.** Gmail, Slack, GitHub, Notion, Linear and hundreds more
-  through Composio. Connect once, pick which bots may use each.
+  through Composio. Everyone brings their own Composio key and connects
+  their own accounts; pick which of your bots may use each.
 - **Routines.** Cron schedules per bot ("every weekday at 8:00") whose
   answers land in your conversation. Templates ship with one ready, paused.
 - **Onboarding.** What you use every day, which teammates to start with, and
@@ -69,8 +70,9 @@ It is not affiliated with xAI, Meta or Anthropic.
 - **Secrets the bots never see.** A bot asks for a key with a card; you
   type it into a masked field; the API keeps it encrypted and fills it in
   where it's used. What a bot writes is scrubbed of stored values.
-- **Team memory and nudges.** `~/.team/MEMORY.md` loads into every bot's
-  turn alongside its own memory. A task one bot hands to another that sits
+- **Team memory and nudges.** Each person's team memory
+  (`~/.team/<user id>/MEMORY.md`) loads into every turn of their bots,
+  alongside each bot's own memory. A task one bot hands to another that sits
   unanswered gets chased, then reported.
 - **Notifications.** Browser push when a bot finishes a job for you or
   needs your input, per bot, quiet when that conversation is in front of
@@ -131,7 +133,7 @@ becomes an approval card you answer in the chat.
 
 ```sh
 git clone https://github.com/dawsja/krubot && cd krubot
-cp .env.example .env        # optional: set COMPOSIO_API_KEY and friends
+cp .env.example .env        # optional: see the comments for each variable
 docker compose up -d
 docker compose logs api | grep "setup token"
 ```
@@ -201,11 +203,13 @@ first; the rest are the admin's:
 - **Computer.** Status, versions, Update and Reset.
 - **Skills.** The library, an editor, and the marketplace's packaged
   skills.
-- **Apps.** Composio's apps with their real logos (connect once, then pick
-  which bots may use each in the bot's profile), and your own MCP servers,
+- **Apps.** Your Composio key, Composio's apps with their real logos
+  (connect once, then pick which bots may use each in the bot's profile),
+  and your own MCP servers,
   HTTP or command, on or off, with Sign in and Sign out for the ones that
   use OAuth.
 - **Secrets.** Names only; values go in once and never come back out.
+  Apps, MCP servers and secrets are each person's own.
 - **Authentication.** The OIDC provider (name, issuer, client id and secret,
   scopes; the redirect URL to register at the provider), and the people
   who have signed in, with a way to remove one along with their bots.

@@ -1,7 +1,7 @@
 import { MCP_LOOPBACK_CALLBACK, type McpServer } from "@krubot/shared";
 import { createHash, randomBytes } from "node:crypto";
 import { appUrl } from "./config.ts";
-import { getMcpOAuth, getMcpServer, setMcpAuthStatus, setMcpOAuth, type McpOAuthState } from "./data/mcp.ts";
+import { getMcpOAuth, getMcpServer, mcpServerOwner, setMcpAuthStatus, setMcpOAuth, type McpOAuthState } from "./data/mcp.ts";
 import { postMessage } from "./data/threads.ts";
 
 /*
@@ -197,7 +197,10 @@ export async function finishMcpLogin(nonce: string, code: string): Promise<strin
  * pasted: finishes it and tells the conversation it started from, which
  * picks up where it left off. Never throws.
  */
-export async function completeMcpLogin(query: { code?: string | null; state?: string | null; error?: string | null; errorDescription?: string | null }): Promise<{ ok: boolean; name?: string; reason?: string; threadId: string | null }> {
+export async function completeMcpLogin(query: { code?: string | null; state?: string | null; error?: string | null; errorDescription?: string | null }, userId: string): Promise<{ ok: boolean; name?: string; reason?: string; threadId: string | null }> {
+  // Only the person whose server it is finishes its sign-in.
+  const login = query.state ? logins().get(query.state) : undefined;
+  if (login && mcpServerOwner(login.serverId) !== userId) return { ok: false, reason: "That sign-in was started by someone else.", threadId: null };
   const threadId = query.state ? mcpLoginThread(query.state) : null;
   const failed = (reason: string) => {
     if (threadId) postMessage({ threadId, author: "system", kind: "event", body: `The sign-in didn't complete: ${reason}`, answered: true });
@@ -217,7 +220,7 @@ export async function completeMcpLogin(query: { code?: string | null; state?: st
 }
 
 /** The address a localhost sign-in landed on, as the person pasted it. */
-export function completeMcpLoginFrom(pasted: string): Promise<{ ok: boolean; name?: string; reason?: string; threadId: string | null }> {
+export function completeMcpLoginFrom(pasted: string, userId: string): Promise<{ ok: boolean; name?: string; reason?: string; threadId: string | null }> {
   let url: URL;
   try {
     url = new URL(pasted.trim());
@@ -226,7 +229,7 @@ export function completeMcpLoginFrom(pasted: string): Promise<{ ok: boolean; nam
   }
   const q = url.searchParams;
   if (!q.get("state")) return Promise.resolve({ ok: false, reason: "That address has no sign-in in it. Copy it from the page the sign-in ended on (it starts with http://localhost).", threadId: null });
-  return completeMcpLogin({ code: q.get("code"), state: q.get("state"), error: q.get("error"), errorDescription: q.get("error_description") });
+  return completeMcpLogin({ code: q.get("code"), state: q.get("state"), error: q.get("error"), errorDescription: q.get("error_description") }, userId);
 }
 
 async function tokenRequest(state: McpOAuthState, params: Record<string, string>): Promise<Pick<McpOAuthState, "accessToken" | "refreshToken" | "expiresAt">> {
