@@ -164,7 +164,7 @@ describe("data", () => {
     const chief = createBot(botInputSchema.parse({ name: "Chief Test", title: "Chief of Staff", isChief: true }), "u-admin");
     const synced: string[] = [];
     const context = {
-      box: { url: "http://box.invalid", token: "t" },
+      box: { url: "http://box.invalid", token: "t", user: "u-admin" },
       bot: chief,
       thread: getThread(chief.threadId)!,
       message: { depth: 0 } as never,
@@ -190,70 +190,99 @@ describe("data", () => {
     expect(await tool.execute({ name: "Dev", title: "Developer", description: "A second one." }, "call")).toContain("Created Dev 2");
   });
 
-  test("an API provider's key is encrypted, write-only, and redacted", async () => {
-    const { saveProvider, getProvider, listProviders, providerKey, providerProxyToken, deleteProvider } = await import("../src/data/providers.ts");
+  test("an API provider's key is encrypted, write-only, redacted, and one person's own", async () => {
+    const { saveProvider, getProvider, listProviders, providerKey, providerProxyToken, providerByToken, deleteProvider } = await import("../src/data/providers.ts");
     const { allSecretValues } = await import("../src/data/secrets.ts");
     const { ensureKruDatabase } = await import("../src/db/init.ts");
-    expect(() => saveProvider("openai", { baseUrl: "https://api.openai.com/v1" })).toThrow("Add the API key");
-    const saved = saveProvider("openai", { baseUrl: "https://api.openai.com/v1/", apiKey: "sk-test-1234567890" });
+    expect(() => saveProvider("u-admin", "openai", { baseUrl: "https://api.openai.com/v1" })).toThrow("Add the API key");
+    const saved = saveProvider("u-admin", "openai", { baseUrl: "https://api.openai.com/v1/", apiKey: "sk-test-1234567890" });
     expect(saved.baseUrl).toBe("https://api.openai.com/v1");
     // Nothing a route could return carries the key.
     expect(JSON.stringify(saved)).not.toContain("sk-test");
-    expect(JSON.stringify(listProviders())).not.toContain("sk-test");
+    expect(JSON.stringify(listProviders("u-admin"))).not.toContain("sk-test");
     const raw = ensureKruDatabase().query("SELECT api_key FROM kru_providers WHERE kind = 'openai'").get() as { api_key: string };
     expect(raw.api_key).not.toContain("sk-test");
-    expect(providerKey("openai")).toBe("sk-test-1234567890");
-    const token = providerProxyToken("openai")!;
+    expect(providerKey("u-admin", "openai")).toBe("sk-test-1234567890");
+    const token = providerProxyToken("u-admin", "openai")!;
     expect(token.length).toBeGreaterThan(20);
     expect(allSecretValues()).toContain("sk-test-1234567890");
     // An edit without a key keeps the key and the proxy token.
-    saveProvider("openai", { baseUrl: "https://api.x.ai/v1" });
-    expect(providerKey("openai")).toBe("sk-test-1234567890");
-    expect(providerProxyToken("openai")).toBe(token);
-    expect(getProvider("openai")!.baseUrl).toBe("https://api.x.ai/v1");
-    expect(deleteProvider("openai")).toBe(true);
-    expect(providerKey("openai")).toBeNull();
+    saveProvider("u-admin", "openai", { baseUrl: "https://api.x.ai/v1" });
+    expect(providerKey("u-admin", "openai")).toBe("sk-test-1234567890");
+    expect(providerProxyToken("u-admin", "openai")).toBe(token);
+    expect(getProvider("u-admin", "openai")!.baseUrl).toBe("https://api.x.ai/v1");
+    // Someone else has no provider until they add their own, with a token of its own.
+    expect(listProviders("u-other")).toEqual([]);
+    expect(providerKey("u-other", "openai")).toBeNull();
+    saveProvider("u-other", "openai", { baseUrl: "https://api.openai.com/v1", apiKey: "sk-other-1234567890" });
+    expect(providerProxyToken("u-other", "openai")).not.toBe(token);
+    expect(providerByToken("openai", token)).toMatchObject({ userId: "u-admin", key: "sk-test-1234567890" });
+    expect(providerByToken("openai", providerProxyToken("u-other", "openai")!)).toMatchObject({ userId: "u-other", key: "sk-other-1234567890" });
+    expect(providerByToken("anthropic", token)).toBeNull();
+    expect(deleteProvider("u-other", "openai")).toBe(true);
+    expect(providerKey("u-admin", "openai")).toBe("sk-test-1234567890");
+    expect(deleteProvider("u-admin", "openai")).toBe(true);
+    expect(providerKey("u-admin", "openai")).toBeNull();
   });
 
-  test("engine settings keep each engine's access and model", async () => {
-    const { getSettings, updateSettings, readEngines } = await import("../src/data/settings.ts");
-    expect(getSettings().engine).toBe("claude");
-    const next = updateSettings({ engine: "codex", engines: { ...getSettings().engines, codex: { access: "api", model: "gpt-test" } } });
+  test("AI settings are each person's own, and the team-wide ones from before become the admin's", async () => {
+    const { getAi, updateAi, adoptLegacyAi } = await import("../src/data/ai.ts");
+    const { readEngines, getSettings } = await import("../src/data/settings.ts");
+    const { ensureKruDatabase } = await import("../src/db/init.ts");
+    expect(getAi("u-admin").engine).toBe("claude");
+    expect(getAi("u-admin").effort).toBeNull();
+    const next = updateAi("u-admin", { engine: "codex", engines: { codex: { access: "api", model: "gpt-test" } }, effort: "high" });
     expect(next.engine).toBe("codex");
     expect(next.engines.codex).toEqual({ access: "api", model: "gpt-test" });
     expect(next.engines.claude.access).toBe("plan");
+    expect(next.effort).toBe("high");
+    // Nobody else's changed.
+    expect(getAi("u-other").engine).toBe("claude");
+    expect(getAi("u-other").engines.codex.access).toBe("plan");
     // An install from before engines keeps its Claude model.
     expect(readEngines(null, "claude-opus-5").claude.model).toBe("claude-opus-5");
     expect(readEngines('{"grok":{"access":"nope","model":"bad model!"}}', null).grok).toEqual({ access: "plan", model: "" });
-    updateSettings({ engine: "claude" });
+    // The engine settings an older install kept for the whole team are adopted by the admin, once, when they have none of their own.
+    ensureKruDatabase().query("UPDATE kru_settings SET engine = 'grok', engines = ?, effort = 'low' WHERE id = 1").run(JSON.stringify({ grok: { access: "api", model: "grok-build" } }));
+    adoptLegacyAi("u-admin");
+    expect(getAi("u-admin").engine).toBe("codex");
+    ensureKruDatabase().query("DELETE FROM kru_user_ai WHERE user_id = ?").run("u-admin");
+    adoptLegacyAi("u-admin");
+    expect(getAi("u-admin")).toMatchObject({ engine: "grok", effort: "low" });
+    expect(getAi("u-admin").engines.grok).toEqual({ access: "api", model: "grok-build" });
+    // The team settings no longer carry the engine at all.
+    expect(Object.keys(getSettings()).sort()).toEqual(["concurrency", "onboarding", "timezone"]);
+    updateAi("u-admin", { engine: "claude", engines: { grok: { access: "plan", model: "" }, codex: { access: "plan", model: "" } }, effort: null });
   });
 
-  test("a turn on an API key gets the proxy and its token, never the key", async () => {
+  test("a turn on an API key gets the proxy and the person's own token, never the key", async () => {
     const { saveProvider, deleteProvider, providerProxyToken } = await import("../src/data/providers.ts");
     const { engineRun, EngineSetupError } = await import("../src/engines.ts");
-    const { getSettings } = await import("../src/data/settings.ts");
-    const settings = { ...getSettings(), engine: "grok" as const, engines: { ...getSettings().engines, grok: { access: "api" as const, model: "" } } };
-    expect(() => engineRun(settings)).toThrow(EngineSetupError);
-    saveProvider("openai", { baseUrl: "https://api.x.ai/v1", apiKey: "xai-secret-123456" });
-    const run = engineRun(settings);
+    const { getAi } = await import("../src/data/ai.ts");
+    const ai = { ...getAi("u-admin"), engine: "grok" as const, engines: { ...getAi("u-admin").engines, grok: { access: "api" as const, model: "" } } };
+    expect(() => engineRun(ai, "u-admin")).toThrow(EngineSetupError);
+    saveProvider("u-admin", "openai", { baseUrl: "https://api.x.ai/v1", apiKey: "xai-secret-123456" });
+    const run = engineRun(ai, "u-admin");
     expect(run.engine).toBe("grok");
     expect(run.model).toBe("");
     expect(run.access.kind).toBe("api");
     if (run.access.kind === "api") {
       expect(run.access.baseUrl).toEndWith("/api/llm/openai");
-      expect(run.access.token).toBe(providerProxyToken("openai")!);
+      expect(run.access.token).toBe(providerProxyToken("u-admin", "openai")!);
     }
     expect(JSON.stringify(run)).not.toContain("xai-secret");
+    // The admin's key is nobody else's: the same settings for another person are a setup problem, not a borrowed key.
+    expect(() => engineRun(ai, "u-other")).toThrow(EngineSetupError);
     // Claude Code on someone else's Anthropic-compatible API gets its model for background work too.
-    saveProvider("anthropic", { baseUrl: "https://api.z.test/anthropic", apiKey: "zk-secret-123456" });
-    const claude = engineRun({ ...settings, engine: "claude", engines: { ...settings.engines, claude: { access: "api", model: "glm-5" } } });
+    saveProvider("u-admin", "anthropic", { baseUrl: "https://api.z.test/anthropic", apiKey: "zk-secret-123456" });
+    const claude = engineRun({ ...ai, engine: "claude", engines: { ...ai.engines, claude: { access: "api", model: "glm-5" } } }, "u-admin");
     expect(claude.access.kind === "api" && claude.access.smallModel).toBe("glm-5");
-    expect(engineRun({ ...settings, engine: "claude" }).access).toEqual({ kind: "plan" });
-    deleteProvider("openai");
-    deleteProvider("anthropic");
+    expect(engineRun({ ...ai, engine: "claude" }, "u-admin").access).toEqual({ kind: "plan" });
+    deleteProvider("u-admin", "openai");
+    deleteProvider("u-admin", "anthropic");
   });
 
-  test("the LLM proxy swaps its token for the key and refuses everything else", async () => {
+  test("the LLM proxy swaps its token for its owner's key and refuses everything else", async () => {
     const { saveProvider, deleteProvider, providerProxyToken } = await import("../src/data/providers.ts");
     const { llmProxyRoutes } = await import("../src/routes/llm.ts");
     const { Hono } = await import("hono");
@@ -267,11 +296,12 @@ describe("data", () => {
       },
     });
     try {
-      saveProvider("openai", { baseUrl: `http://127.0.0.1:${upstream.port}/v1`, apiKey: "sk-real-key-123456" });
-      saveProvider("anthropic", { baseUrl: `http://127.0.0.1:${upstream.port}`, apiKey: "ant-real-key-123456" });
+      saveProvider("u-admin", "openai", { baseUrl: `http://127.0.0.1:${upstream.port}/v1`, apiKey: "sk-real-key-123456" });
+      saveProvider("u-admin", "anthropic", { baseUrl: `http://127.0.0.1:${upstream.port}`, apiKey: "ant-real-key-123456" });
+      saveProvider("u-other", "openai", { baseUrl: `http://127.0.0.1:${upstream.port}/other`, apiKey: "sk-other-key-123456" });
       const app = new Hono();
       app.route("/api", llmProxyRoutes());
-      const token = providerProxyToken("openai")!;
+      const token = providerProxyToken("u-admin", "openai")!;
       const refused = await app.request("/api/llm/openai/responses", { method: "POST", headers: { authorization: "Bearer wrong" }, body: "{}" });
       expect(refused.status).toBe(401);
       expect(seen).toHaveLength(0);
@@ -280,16 +310,21 @@ describe("data", () => {
       expect(await ok.text()).toContain('"ok":true');
       expect(seen[0]).toEqual({ path: "/v1/responses?x=1", auth: "Bearer sk-real-key-123456", xkey: null, body: '{"model":"m"}' });
       // Claude Code presents the token as a bearer; a non-Anthropic host gets the key both ways.
-      const anthropic = await app.request("/api/llm/anthropic/v1/messages", { method: "POST", headers: { authorization: `Bearer ${providerProxyToken("anthropic")}` }, body: "{}" });
+      const anthropic = await app.request("/api/llm/anthropic/v1/messages", { method: "POST", headers: { authorization: `Bearer ${providerProxyToken("u-admin", "anthropic")}` }, body: "{}" });
       expect(anthropic.status).toBe(200);
       expect(seen[1]!.path).toBe("/v1/messages");
       expect(seen[1]!.xkey).toBe("ant-real-key-123456");
       // One provider's token doesn't open the other.
       expect((await app.request("/api/llm/anthropic/v1/messages", { method: "POST", headers: { "x-api-key": token }, body: "{}" })).status).toBe(401);
+      // Another person's token reaches their own key and endpoint, never the admin's.
+      const other = await app.request("/api/llm/openai/responses", { method: "POST", headers: { authorization: `Bearer ${providerProxyToken("u-other", "openai")}` }, body: "{}" });
+      expect(other.status).toBe(200);
+      expect(seen[2]).toMatchObject({ path: "/other/responses", auth: "Bearer sk-other-key-123456" });
     } finally {
       upstream.stop(true);
-      deleteProvider("openai");
-      deleteProvider("anthropic");
+      deleteProvider("u-admin", "openai");
+      deleteProvider("u-admin", "anthropic");
+      deleteProvider("u-other", "openai");
     }
   });
 
@@ -319,7 +354,7 @@ describe("data", () => {
     port = fake.port ?? 0;
     try {
       const bot = updateBot(createBot(botInputSchema.parse({ name: "Trader" }), "u-admin").id, { approval: "full" })!;
-      const context = { box: { url: "http://box.invalid", token: "t" }, bot, thread: getThread(bot.threadId)!, message: { depth: 0 } as never, askBot: async () => "", syncSoul: async () => undefined };
+      const context = { box: { url: "http://box.invalid", token: "t", user: "u-admin" }, bot, thread: getThread(bot.threadId)!, message: { depth: 0 } as never, askBot: async () => "", syncSoul: async () => undefined };
       const tool = baseTools(context).add_mcp_server!;
       expect(await tool.execute({ name: "x", url: "file:///etc/passwd" }, "c")).toContain("NOT added");
       expect(await tool.execute({ name: "x", url: "https://me:pw@example.com/mcp" }, "c")).toContain("NOT added");
@@ -610,10 +645,14 @@ describe("data", () => {
     const { baseTools, sharePath } = await import("../src/tools.ts");
     const { botInputSchema } = await import("@krubot/shared");
     expect(sharePath("~/.team/hello-world.html", "b1")).toBe(".team/hello-world.html");
-    expect(sharePath("/home/agent/.team/a.txt", "b1")).toBe(".team/a.txt");
+    // An absolute path is the person's home on the box, once it is known; before that, nothing absolute is.
+    expect(sharePath("/home/agent/.team/a.txt", "b1", "/home/agent")).toBe(".team/a.txt");
+    expect(sharePath("/home/kru-ada/notes/a.txt", "b1", "/home/kru-ada")).toBe("notes/a.txt");
+    expect(sharePath("/home/agent/.team/a.txt", "b1", "/home/kru-ada")).toBeNull();
+    expect(sharePath("/home/agent/.team/a.txt", "b1")).toBeNull();
     expect(sharePath("out/report.pdf", "b1")).toBe(".bots/b1/out/report.pdf");
     expect(sharePath("../../../../etc/passwd", "b1")).toBeNull();
-    expect(sharePath("/etc/passwd", "b1")).toBeNull();
+    expect(sharePath("/etc/passwd", "b1", "/home/agent")).toBeNull();
     const asked: string[] = [];
     const box = Bun.serve({
       port: 0,
@@ -628,7 +667,7 @@ describe("data", () => {
     });
     try {
       const bot = createBot(botInputSchema.parse({ name: "Sender" }), "u-admin");
-      const context = { box: { url: `http://127.0.0.1:${box.port}`, token: "t" }, bot, thread: getThread(bot.threadId)!, message: { depth: 0 } as never, askBot: async () => "", syncSoul: async () => undefined };
+      const context = { box: { url: `http://127.0.0.1:${box.port}`, token: "t", user: "u-admin" }, bot, thread: getThread(bot.threadId)!, message: { depth: 0 } as never, askBot: async () => "", syncSoul: async () => undefined };
       const tool = baseTools(context).send_file!;
       expect(String(await tool.execute({ path: "~/.team/missing.html" }, "c"))).toContain("NOT sent");
       expect(String(await tool.execute({ path: "~/.team/hello-world.html", note: "Here it is." }, "c"))).toContain("Sent hello-world.html");
@@ -685,7 +724,7 @@ describe("data", () => {
       },
     });
     try {
-      const config = { url: `http://127.0.0.1:${box.port}`, token: "t" };
+      const config = { url: `http://127.0.0.1:${box.port}`, token: "t", user: "u-admin" };
       // The file from before team memory was per person is the admin's, and nobody else's.
       expect(await loadTeamMemory(config, "u-admin")).toBe("Dylan is the Chief of Staff.");
       expect(await loadTeamMemory(config, "u-other")).toBeNull();

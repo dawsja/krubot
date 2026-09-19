@@ -1,6 +1,6 @@
 "use client";
 
-import { APP_CATALOG, BOT_TEMPLATES, ENGINE_LABELS, ENGINES, PROVIDER_LABELS, type AppCatalogEntry, type BoxStatus, type Engine, type EngineAccess, type EngineSettings, type Settings } from "@krubot/shared";
+import { APP_CATALOG, BOT_TEMPLATES, ENGINE_LABELS, ENGINES, PROVIDER_LABELS, type AiSettings, type AppCatalogEntry, type BoxStatus, type Engine, type EngineAccess, type EngineSettings } from "@krubot/shared";
 import { Check, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -61,14 +61,14 @@ export function Onboarding() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [ai, setAi] = useState<AiSettings | null>(null);
   const { providers, reload: reloadProviders } = useProviders();
   const [modelDraft, setModelDraft] = useState<{ engine: Engine; value: string } | null>(null);
   useEffect(() => {
     let alive = true;
     void Promise.resolve().then(() =>
-      api<{ settings: Settings }>("/api/settings")
-        .then((d) => alive && setSettings(d.settings))
+      api<{ ai: AiSettings }>("/api/ai")
+        .then((d) => alive && setAi(d.ai))
         .catch(() => undefined),
     );
     return () => {
@@ -78,8 +78,8 @@ export function Onboarding() {
 
   async function saveAi(next: { engine?: Engine; engines?: Partial<Record<Engine, Partial<EngineSettings>>> }) {
     try {
-      const data = await patch<{ settings: Settings }>("/api/settings", next);
-      setSettings(data.settings);
+      const data = await patch<{ ai: AiSettings }>("/api/ai", next);
+      setAi(data.ai);
       setError(null);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not save.");
@@ -210,12 +210,12 @@ export function Onboarding() {
         {step === "ai" ? (
           <>
             <h1 className="text-center text-[26px] font-semibold tracking-[-0.5px]">Choose what your bots run on</h1>
-            <p className="mt-2 max-w-md text-center text-[14px] leading-6 text-muted-foreground">Every bot works through a coding agent on its computer. Use your own plan, signed in once on the computer, or an API key that Kru Bot keeps encrypted. You can change this under Settings → AI.</p>
-            {!settings ? (
+            <p className="mt-2 max-w-md text-center text-[14px] leading-6 text-muted-foreground">Every bot works through a coding agent on its computer. Use your own plan, signed in once in your account on the computer, or an API key that Kru Bot keeps encrypted. Everyone who joins later chooses their own under Settings → AI, and so can you.</p>
+            {!ai ? (
               <Spinner className="mt-6" />
             ) : (
               <AiStep
-                settings={settings}
+                ai={ai}
                 status={status}
                 providers={providers}
                 modelDraft={modelDraft}
@@ -258,7 +258,7 @@ export function Onboarding() {
 
 /** The last step: engine, plan or API key, and whether it's ready. */
 function AiStep({
-  settings,
+  ai,
   status,
   providers,
   modelDraft,
@@ -266,7 +266,7 @@ function AiStep({
   onSave,
   onProviderSaved,
 }: {
-  settings: Settings;
+  ai: AiSettings;
   status: BoxStatus | null;
   providers: ReturnType<typeof useProviders>["providers"];
   modelDraft: { engine: Engine; value: string } | null;
@@ -274,9 +274,9 @@ function AiStep({
   onSave: (next: { engine?: Engine; engines?: Partial<Record<Engine, Partial<EngineSettings>>> }) => Promise<void>;
   onProviderSaved: () => void;
 }) {
-  const engine = settings.engine;
+  const engine = ai.engine;
   const info = ENGINE_LABELS[engine];
-  const config = settings.engines[engine];
+  const config = ai.engines[engine];
   const provider = providers?.[info.provider] ?? null;
   const model = modelDraft?.engine === engine ? modelDraft.value : config.model;
   const ready = readiness(engine, config.access, status, providers);

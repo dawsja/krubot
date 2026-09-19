@@ -1,13 +1,14 @@
 import { providerInputSchema, type ProviderKind } from "@krubot/shared";
 import { Hono } from "hono";
 import type { Env } from "../app.ts";
-import { deleteProvider, getProvider, isProviderKind, listProviders, providerBaseUrl, providerKey, providerProxyToken, recordProviderCheck, saveProvider } from "../data/providers.ts";
-import { timingSafeEqualString } from "../ids.ts";
+import { userId } from "../access.ts";
+import { deleteProvider, getProvider, isProviderKind, listProviders, providerBaseUrl, providerByToken, providerKey, recordProviderCheck, saveProvider } from "../data/providers.ts";
 
 /*
- * AI providers: the settings (under the session), and the proxy the bots'
- * CLIs reach them through (under the provider's proxy token). The proxy is
- * the one place a provider key is added to a request, so the box, the
+ * AI providers, each person's own: the settings (under the session, for
+ * the signed-in person), and the proxy the bots' CLIs reach them through
+ * (under the provider's proxy token, which names whose it is). The proxy
+ * is the one place a provider key is added to a request, so the box, the
  * CLIs and the web never hold it.
  */
 
@@ -43,9 +44,9 @@ export function upstreamUrl(baseUrl: string, suffix: string, search: string): UR
 }
 
 /** Asks the provider for its model list with the key: tells a bad key from a good one. */
-async function checkProvider(kind: ProviderKind): Promise<{ ok: boolean; detail: string }> {
-  const baseUrl = providerBaseUrl(kind);
-  const key = providerKey(kind);
+async function checkProvider(owner: string, kind: ProviderKind): Promise<{ ok: boolean; detail: string }> {
+  const baseUrl = providerBaseUrl(owner, kind);
+  const key = providerKey(owner, kind);
   if (!baseUrl || !key) return { ok: false, detail: "Not set" };
   const url = upstreamUrl(baseUrl, kind === "anthropic" ? "v1/models" : "models", "");
   try {
@@ -68,7 +69,7 @@ async function checkProvider(kind: ProviderKind): Promise<{ ok: boolean; detail:
 export function providerRoutes() {
   const app = new Hono<Env>();
 
-  app.get("/providers", (c) => c.json({ providers: listProviders() }));
+  app.get("/providers", (c) => c.json({ providers: listProviders(userId(c)) }));
 
   app.put("/providers/:kind", async (c) => {
     const kind = c.req.param("kind");
@@ -76,24 +77,24 @@ export function providerRoutes() {
     const parsed = providerInputSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Bad provider" }, 400);
     try {
-      saveProvider(kind, parsed.data);
+      saveProvider(userId(c), kind, parsed.data);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : "Could not save" }, 400);
     }
-    const provider = recordProviderCheck(kind, await checkProvider(kind));
+    const provider = recordProviderCheck(userId(c), kind, await checkProvider(userId(c), kind));
     return c.json({ provider });
   });
 
   app.post("/providers/:kind/check", async (c) => {
     const kind = c.req.param("kind");
-    if (!isProviderKind(kind) || !getProvider(kind)) return c.json({ error: "No such provider" }, 404);
-    return c.json({ provider: recordProviderCheck(kind, await checkProvider(kind)) });
+    if (!isProviderKind(kind) || !getProvider(userId(c), kind)) return c.json({ error: "No such provider" }, 404);
+    return c.json({ provider: recordProviderCheck(userId(c), kind, await checkProvider(userId(c), kind)) });
   });
 
   app.delete("/providers/:kind", (c) => {
     const kind = c.req.param("kind");
     if (!isProviderKind(kind)) return c.json({ error: "No such provider" }, 404);
-    return deleteProvider(kind) ? c.body(null, 204) : c.json({ error: "No such provider" }, 404);
+    return deleteProvider(userId(c), kind) ? c.body(null, 204) : c.json({ error: "No such provider" }, 404);
   });
 
   return app;
@@ -101,8 +102,10 @@ export function providerRoutes() {
 
 /**
  * The proxy: /api/llm/:kind/* → the provider's base URL, with the real key
- * in place of the proxy token the CLI presented. Streams both ways, so
- * server-sent events pass through as they come.
+ * in place of the proxy token the CLI presented. The token names the
+ * person's provider, so each person's bots reach their own key and nobody
+ * else's. Streams both ways, so server-sent events pass through as they
+ * come.
  */
 export function llmProxyRoutes() {
   const app = new Hono();
@@ -110,12 +113,11 @@ export function llmProxyRoutes() {
   app.all("/llm/:kind/*", async (c) => {
     const kind = c.req.param("kind");
     if (!isProviderKind(kind)) return c.json({ error: "No such provider" }, 404);
-    const expected = providerProxyToken(kind) ?? "";
     const token = presentedToken(c.req.raw.headers);
-    if (!expected || token.length !== expected.length || !timingSafeEqualString(token, expected)) return c.json({ error: { type: "authentication_error", message: "Unauthorized" } }, 401);
-    const baseUrl = providerBaseUrl(kind);
-    const key = providerKey(kind);
-    if (!baseUrl || !key) return c.json({ error: { type: "not_found", message: "This provider isn't set up. Add it under Settings → AI." } }, 404);
+    // Tokens are random and unique; the lookup is by equality in the database, never by prefix.
+    const provider = token.length >= 16 && token.length <= 200 ? providerByToken(kind, token) : null;
+    if (!provider) return c.json({ error: { type: "authentication_error", message: "Unauthorized" } }, 401);
+    const { baseUrl, key } = provider;
 
     const suffix = c.req.path.replace(/^\/api\/llm\/[^/]+\/?/, "");
     const target = upstreamUrl(baseUrl, suffix, new URL(c.req.url).search);

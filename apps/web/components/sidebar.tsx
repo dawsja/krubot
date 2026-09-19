@@ -51,8 +51,8 @@ function preview(thread: ThreadRow, bots: Bot[], activity: Record<string, string
  * a long press on a phone; a room gets clear and delete.
  */
 function ThreadMenu({ thread, bot, onOpen, onAsk, trigger, children }: { thread: ThreadRow; bot: Bot | undefined; onOpen: (dialog: ShellDialog) => void; onAsk: (ask: Ask) => void; trigger: ReactElement; children: ReactNode }) {
-  const { refresh, admin } = useStore();
-  const groups = threadActions({ thread, bot, admin, onOpen, onAsk, refresh });
+  const { refresh } = useStore();
+  const groups = threadActions({ thread, bot, onOpen, onAsk, refresh });
   return (
     <ContextMenu>
       <ContextMenuTrigger render={trigger}>{children}</ContextMenuTrigger>

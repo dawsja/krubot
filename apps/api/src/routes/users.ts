@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { userId } from "../access.ts";
 import type { Env } from "../app.ts";
 import { getAuth, invalidateAuth, oidcCallbackUrl, oidcLogoutUrl } from "../auth.ts";
-import { boxConfig, deleteBotHome } from "../box.ts";
+import { boxConfig, removeBoxAccount } from "../box.ts";
 import { clearOidcSecret, getOidcSettings, oidcReady, updateOidcSettings } from "../data/oidc.ts";
 import { listThreads } from "../data/threads.ts";
 import { deleteUserData, getUser, listUsers } from "../data/users.ts";
@@ -49,7 +49,11 @@ export function usersRoutes() {
 
   app.get("/users", (c) => c.json({ users: listUsers() }));
 
-  /** Removes a person and everything of theirs: bots (and their homes on the computer), conversations, sessions. */
+  /**
+   * Removes a person and everything of theirs: bots, conversations, apps,
+   * keys, secrets and sessions here, and their whole account on the
+   * computer (their user, their home, their bots' files, their sign-ins).
+   */
   app.delete("/users/:id", async (c) => {
     const id = c.req.param("id");
     if (id === userId(c)) return c.json({ error: "You can't remove yourself" }, 400);
@@ -57,9 +61,9 @@ export function usersRoutes() {
     if (!user) return c.json({ error: "No such person" }, 404);
     if (user.role === "admin") return c.json({ error: "The admin can't be removed" }, 400);
     for (const thread of listThreads({ userId: id })) await interrupt(thread.id).catch(() => undefined);
-    const { bots } = deleteUserData(id);
+    deleteUserData(id);
     const box = boxConfig();
-    for (const botId of bots) if (box) await deleteBotHome(box, botId).catch(() => undefined);
+    if (box) await removeBoxAccount(box, id).catch((error: unknown) => console.warn(`[kru] could not remove ${id}'s account on the box: ${error instanceof Error ? error.message : error}`));
     const auth = await getAuth();
     await auth.api.removeUser({ body: { userId: id }, headers: c.req.raw.headers });
     return c.body(null, 204);

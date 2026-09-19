@@ -1,6 +1,6 @@
 "use client";
 
-import type { AppCatalogEntry, BoxStatus, Connection, Settings } from "@krubot/shared";
+import type { AiSettings, AppCatalogEntry, BoxStatus, Connection, Settings } from "@krubot/shared";
 import { ChevronLeft, ChevronRight, LogOut, Monitor } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -42,6 +42,7 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
   const params = useSearchParams();
   const [status, setStatus] = useState<BoxStatus | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [ai, setAi] = useState<AiSettings | null>(null);
   const [catalog, setCatalog] = useState<AppCatalogEntry[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [configured, setConfigured] = useState(false);
@@ -58,21 +59,23 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
   }, [current.id]);
 
   const load = useCallback(async (fresh = false) => {
-    const [s, st, cat, conn] = await Promise.all([
+    // Everyone has their own AI, their own account on the computer and their own apps.
+    const [s, a, st, cat, conn] = await Promise.all([
       api<{ settings: Settings }>("/api/settings").catch(() => null),
-      // The computer's status is the admin's; everyone has their own apps.
-      admin ? api<{ status: BoxStatus }>(`/api/status${fresh ? "?fresh=1" : ""}`).catch(() => null) : null,
+      api<{ ai: AiSettings }>("/api/ai").catch(() => null),
+      api<{ status: BoxStatus }>(`/api/status${fresh ? "?fresh=1" : ""}`).catch(() => null),
       api<{ apps: AppCatalogEntry[] }>("/api/catalog").catch(() => null),
       api<{ configured: boolean; connections: Connection[] }>("/api/connections").catch(() => null),
     ]);
     if (s) setSettings(s.settings);
+    if (a) setAi(a.ai);
     if (st) setStatus(st.status);
     if (cat) setCatalog(cat.apps);
     if (conn) {
       setConnections(conn.connections);
       setConfigured(conn.configured);
     }
-  }, [admin]);
+  }, []);
 
   useEffect(() => {
     const connected = params.get("connected");
@@ -86,7 +89,7 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
     });
   }, [load, params]);
   useLiveEvents((event) => {
-    if (event.topic === "settings") void load();
+    if (event.topic === "settings" || event.topic === "ai") void load();
     // When the update finishes, the box answers with its new versions.
     if (event.topic === "box") void load();
   });
@@ -135,19 +138,17 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
           </Link>
         );
       })}
-      {/* The computer is the admin's, a screen of its own: reached from here on a phone, where there is no bar. */}
-      {admin ? (
-        <Link href="/app/computer" className="flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50">
-          <span className="flex size-9 items-center justify-center rounded-full bg-muted text-foreground">
-            <Monitor className="size-4" aria-hidden="true" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[15px] font-medium">Open the computer</span>
-            <span className="block truncate text-[12.5px] text-muted-foreground">The bots&apos; desktop, full screen.</span>
-          </span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        </Link>
-      ) : null}
+      {/* The computer, your own account on it, a screen of its own: reached from here on a phone, where there is no bar. */}
+      <Link href="/app/computer" className="flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50">
+        <span className="flex size-9 items-center justify-center rounded-full bg-muted text-foreground">
+          <Monitor className="size-4" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-medium">Open the computer</span>
+          <span className="block truncate text-[12.5px] text-muted-foreground">Your desktop on the bots&apos; computer, full screen.</span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </Link>
       {/* Sign out ends the list: on a phone your picture opens Settings directly, there is no menu. */}
       <button type="button" onClick={() => void signOut()} className="mt-4 flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 text-left outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50">
         <span className="flex size-9 items-center justify-center rounded-full bg-muted text-foreground">
@@ -232,13 +233,13 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
     case "ai":
       body = (
         <>
-          {settings ? <EngineCard settings={settings} status={status} onChange={setSettings} /> : <Skeleton className="h-96 rounded-xl" />}
+          {ai ? <EngineCard ai={ai} status={status} onChange={setAi} /> : <Skeleton className="h-96 rounded-xl" />}
           <ProvidersCard />
         </>
       );
       break;
     case "computer":
-      body = <ComputerCard status={status} onCheck={() => load(true)} />;
+      body = <ComputerCard status={status} admin={admin} onCheck={() => load(true)} />;
       break;
     case "skills":
       body = <SkillsCard />;

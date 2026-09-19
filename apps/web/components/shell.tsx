@@ -23,7 +23,6 @@ export type ShellDialog = { kind: "new-bot" } | { kind: "edit-bot"; botId: strin
  */
 export function Shell({ user, children }: { user: SessionUser; children: ReactNode }) {
   const [dialog, setDialog] = useState<ShellDialog>(null);
-  const admin = user.role === "admin";
   return (
     <StoreProvider user={user}>
       <SidebarProvider style={{ "--sidebar-width": "300px" } as React.CSSProperties} className="h-dvh min-h-0 overflow-hidden">
@@ -34,7 +33,7 @@ export function Shell({ user, children }: { user: SessionUser; children: ReactNo
       </SidebarProvider>
       {dialog?.kind === "new-bot" || dialog?.kind === "edit-bot" ? <BotDialog botId={dialog.kind === "edit-bot" ? dialog.botId : null} onClose={() => setDialog(null)} /> : null}
       {dialog?.kind === "new-room" ? <RoomDialog onClose={() => setDialog(null)} /> : null}
-      {dialog?.kind === "computer" && admin ? (
+      {dialog?.kind === "computer" ? (
         <ComputerPanel
           onClose={() => setDialog(null)}
         />

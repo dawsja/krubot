@@ -73,9 +73,11 @@ export function createApp() {
 
   // The admin's areas. Reads that everyone needs (the skills index, a
   // reduced settings view) stay open and are narrowed inside their routes.
-  // Connected apps, MCP servers and secrets are each person's own and
-  // answer only for the signed-in person.
-  for (const path of ["/api/box", "/api/box/*", "/api/status", "/api/onboarding/*", "/api/providers", "/api/providers/*", "/api/users", "/api/users/*", "/api/oidc", "/api/oidc/*", "/api/bots/:id/files"]) {
+  // Connected apps, MCP servers, secrets, the AI (engine, plan or API
+  // keys) and the computer (their own account on it: terminals, desktop,
+  // their bots' files) are each person's own and answer only for the
+  // signed-in person; Update and Reset change the computer for everyone.
+  for (const path of ["/api/box/update", "/api/box/reset", "/api/onboarding/*", "/api/users", "/api/users/*", "/api/oidc", "/api/oidc/*"]) {
     app.use(path, requireAdmin);
   }
   app.on(["POST", "PATCH", "PUT", "DELETE"], ["/api/settings", "/api/skills", "/api/skills/*"], requireAdmin);

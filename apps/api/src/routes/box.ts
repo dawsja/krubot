@@ -19,21 +19,24 @@ import {
   writeBoxFile,
   type BoxConfig,
 } from "../box.ts";
-import { getBot } from "../data/bots.ts";
+import { ownBot, userId } from "../access.ts";
 import { botHome } from "../memory.ts";
 import { isUpdating, startReset, startUpdate, updateReport } from "../updater.ts";
 
 /*
- * The person's own use of the computer: terminals, the desktop, and the
- * files in a bot's home (its SOUL.md, MEMORY.md and notes). The box's
- * event streams pass through unchanged.
+ * The person's own use of the computer, inside their own account on it:
+ * terminals, their desktop, and the files in their bots' homes (SOUL.md,
+ * MEMORY.md and notes). Everything here answers for the signed-in person
+ * and their own things; Update and Reset are the admin's (app.ts). The
+ * box's event streams pass through unchanged.
  */
 
 const STREAM_ID = /^[a-f0-9]{16}$/;
 
+/** The box for the signed-in person: their account there. */
 function requireBox(c: Context<Env>): BoxConfig | Response {
   try {
-    const config = boxConfig();
+    const config = boxConfig(userId(c));
     if (config) return config;
   } catch (error) {
     return c.json({ error: (error as Error).message }, 503);
@@ -93,7 +96,7 @@ export function boxRoutes() {
     const box = requireBox(c);
     if (box instanceof Response) return box;
     const body = (await c.req.json().catch(() => ({}))) as { bot?: string; cols?: number; rows?: number };
-    if (body.bot && !getBot(body.bot)) return c.json({ error: "No such bot" }, 404);
+    if (body.bot && !ownBot(c, body.bot)) return c.json({ error: "No such bot" }, 404);
     try {
       return c.json({ terminal: await createTerminal(box, { bot: body.bot ?? null, cols: Number(body.cols) || 80, rows: Number(body.rows) || 24 }) });
     } catch (error) {
@@ -235,7 +238,7 @@ export function boxRoutes() {
   // ---------- a bot's files ----------
 
   app.get("/bots/:id/files", async (c) => {
-    const bot = getBot(c.req.param("id"));
+    const bot = ownBot(c, c.req.param("id"));
     if (!bot) return c.json({ error: "No such bot" }, 404);
     const box = requireBox(c);
     if (box instanceof Response) return box;
@@ -249,7 +252,7 @@ export function boxRoutes() {
   });
 
   app.put("/bots/:id/files", async (c) => {
-    const bot = getBot(c.req.param("id"));
+    const bot = ownBot(c, c.req.param("id"));
     if (!bot) return c.json({ error: "No such bot" }, 404);
     const box = requireBox(c);
     if (box instanceof Response) return box;
@@ -265,7 +268,7 @@ export function boxRoutes() {
   });
 
   app.delete("/bots/:id/files", async (c) => {
-    const bot = getBot(c.req.param("id"));
+    const bot = ownBot(c, c.req.param("id"));
     if (!bot) return c.json({ error: "No such bot" }, 404);
     const box = requireBox(c);
     if (box instanceof Response) return box;

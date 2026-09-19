@@ -64,11 +64,12 @@ services:
     depends_on:
       - box
 
-  # Every bot's computer: its home folder, a shell, a browser and a desktop.
-  # No ports are published; only the API can reach it. Nothing in it can
-  # see the API's data. Settings → Computer → Update patches it in place
-  # (Debian, Bun, Claude Code) and, with the Docker socket above, pulls the
-  # newest image and recreates it with these same volumes.
+  # Every bot's computer: a home folder, a shell, a browser and a desktop
+  # for each person, as their own Linux user. No ports are published; only
+  # the API can reach it. Nothing in it can see the API's data. Settings →
+  # Computer → Update patches it in place (Debian, Bun, Claude Code) and,
+  # with the Docker socket above, pulls the newest image and recreates it
+  # with these same volumes.
   box:
     image: ${KRU_BOX_IMAGE:-ghcr.io/dawsja/krubot-box:latest}
     # build: ./packages/box
@@ -76,8 +77,16 @@ services:
     environment:
       - BOT_IDLE_MS
     volumes:
+      # The box's own state: its API token and the register of accounts
+      # (which person is which Linux user), so a recreated box makes the
+      # same users again with the same ids.
       - kru-box-state:/state
-      # The box is not a throwaway. The agent's whole home is a volume, so
+      # Everyone's homes. Each person who signs in through the OIDC
+      # provider gets their own Linux user and /home/<name> here: their
+      # bots' files, their caches and their own CLI sign-ins, private to
+      # them. The admin's is the agent's home, below.
+      - kru-box-homes:/home
+      # The box is not a throwaway. The admin's whole home is a volume, so
       # what the bots set up for themselves (global packages, tools,
       # dotfiles, browser profiles) survives restarts and image updates.
       - kru-box-home:/home/agent
@@ -86,8 +95,8 @@ services:
       - kru-box-bots:/home/agent/.bots
       # Package caches survive restarts, so installs are fast.
       - kru-box-cache:/home/agent/.cache
-      # The Claude Code sign-in, made once from the box desktop, survives
-      # restarts and image updates. The API never reads it.
+      # The admin's Claude Code sign-in, made once from the box desktop,
+      # survives restarts and image updates. The API never reads it.
       - kru-box-claude:/home/agent/.claude
     security_opt:
       - no-new-privileges:true
@@ -101,6 +110,7 @@ services:
 volumes:
   kru-data:
   kru-box-state:
+  kru-box-homes:
   kru-box-home:
   kru-box-bots:
   kru-box-cache:

@@ -1,4 +1,4 @@
-import { DEFAULT_ENGINES, EFFORT_LEVELS, ENGINE_ACCESS, ENGINES, MODEL_ID_PATTERN, type Connection, type EffortLevel, type Engine, type EngineSettings, type Onboarding, type Settings } from "@krubot/shared";
+import { DEFAULT_ENGINES, ENGINE_ACCESS, ENGINES, MODEL_ID_PATTERN, type Connection, type Engine, type EngineSettings, type Onboarding, type Settings } from "@krubot/shared";
 import { concurrency as defaultConcurrency } from "../config.ts";
 import { ensureKruDatabase } from "../db/init.ts";
 import { emit, settingsChanged } from "../events.ts";
@@ -6,14 +6,11 @@ import { now } from "../ids.ts";
 
 const EMPTY_ONBOARDING: Onboarding = { done: false, apps: [], templates: [] };
 
-function isEngine(value: unknown): value is Engine {
-  return typeof value === "string" && (ENGINES as readonly string[]).includes(value);
-}
-
 /**
  * Each engine's settings from the stored JSON, over the defaults. An
  * install from before engines keeps its Claude model (the old `model`
- * column).
+ * column). Used by each person's AI settings (data/ai.ts), and to read
+ * the team-wide row an older install had, once, for the admin.
  */
 export function readEngines(json: string | null, legacyModel: string | null): Record<Engine, EngineSettings> {
   let stored: Partial<Record<Engine, Partial<EngineSettings>>> = {};
@@ -35,24 +32,19 @@ export function readEngines(json: string | null, legacyModel: string | null): Re
   return out;
 }
 
+/** What the whole team shares. The AI is each person's own (data/ai.ts). */
 export function getSettings(): Settings {
-  const row = ensureKruDatabase().query("SELECT onboarding, concurrency, timezone, model, effort, engine, engines FROM kru_settings WHERE id = 1").get() as
-    | { onboarding: string; concurrency: number | null; timezone: string; model: string | null; effort: string | null; engine: string | null; engines: string | null }
-    | null;
+  const row = ensureKruDatabase().query("SELECT onboarding, concurrency, timezone FROM kru_settings WHERE id = 1").get() as { onboarding: string; concurrency: number | null; timezone: string } | null;
   let onboarding = EMPTY_ONBOARDING;
   try {
     onboarding = { ...EMPTY_ONBOARDING, ...(JSON.parse(row?.onboarding ?? "{}") as Partial<Onboarding>) };
   } catch {
     /* defaults */
   }
-  const effort = (EFFORT_LEVELS as readonly string[]).includes(row?.effort ?? "") ? (row!.effort as EffortLevel) : null;
   return {
     onboarding,
     concurrency: row?.concurrency ?? defaultConcurrency(),
     timezone: row?.timezone ?? "UTC",
-    engine: isEngine(row?.engine) ? row.engine : "claude",
-    engines: readEngines(row?.engines ?? null, row?.model ?? null),
-    effort,
   };
 }
 
@@ -62,11 +54,10 @@ export function updateSettings(patch: Partial<Settings>): Settings {
     ...current,
     ...patch,
     onboarding: { ...current.onboarding, ...(patch.onboarding ?? {}) },
-    engines: { ...current.engines, ...(patch.engines ?? {}) },
   };
   ensureKruDatabase()
-    .query("UPDATE kru_settings SET onboarding = ?, concurrency = ?, timezone = ?, model = ?, effort = ?, engine = ?, engines = ?, updated_at = ? WHERE id = 1")
-    .run(JSON.stringify(next.onboarding), next.concurrency, next.timezone, next.engines.claude.model, next.effort, next.engine, JSON.stringify(next.engines), now());
+    .query("UPDATE kru_settings SET onboarding = ?, concurrency = ?, timezone = ?, updated_at = ? WHERE id = 1")
+    .run(JSON.stringify(next.onboarding), next.concurrency, next.timezone, now());
   settingsChanged();
   return getSettings();
 }

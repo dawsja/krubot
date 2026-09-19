@@ -1,6 +1,6 @@
 import { APP_CATALOG, BOT_COLORS, BOT_EXPRESSIONS, MAX_ATTACHMENT_BYTES, botInputSchema, composioCard, handleOf, mcpToolkit, mediaTypeFor, mcpServerInputSchema, pickBotName, type Bot, type BotExpression, type McpServer, type Message, type Thread } from "@krubot/shared";
 import { requestApproval, summarize } from "./approvals.ts";
-import { readBoxFile, readBoxFileBytes, writeBoxFile, type BoxConfig } from "./box.ts";
+import { boxHome, readBoxFile, readBoxFileBytes, writeBoxFile, type BoxConfig } from "./box.ts";
 import { availableToolkits, composioConfigured, executeAction, isReadOnlyAction, startConnection, toolsFor, type ComposioTool } from "./composio.ts";
 import { createBot, findBot, getBot, listBots, updateBot } from "./data/bots.ts";
 import { createDelegation } from "./data/delegations.ts";
@@ -95,13 +95,14 @@ function profilePatch(input: Record<string, unknown>): { name?: string; title?: 
 const NAMED_COLORS: Record<string, string> = { orange: "#FF5A0F", blue: "#3B82F6", red: "#EF4444", yellow: "#F59E0B", amber: "#F59E0B", purple: "#8B5CF6", violet: "#8B5CF6", pink: "#EC4899", teal: "#14B8A6", green: "#22C55E", sky: "#0EA5E9", "light blue": "#0EA5E9", coral: "#F97316" };
 
 /**
- * Where a file a bot names lives, relative to the agent's home: "~/x" and
- * "/home/agent/x" from the home, anything else from the bot's own folder.
- * Null when it climbs out; the box checks again, links included.
+ * Where a file a bot names lives, relative to its owner's home: "~/x" and
+ * "<home>/x" from the home, anything else from the bot's own folder. Null
+ * when it climbs out, or names an absolute path outside the home; the box
+ * checks again, links included.
  */
-export function sharePath(given: string, botId: string): string | null {
-  const home = "/home/agent/";
-  const raw = given.startsWith("~/") ? given.slice(2) : given.startsWith(home) ? given.slice(home.length) : given.startsWith("/") ? null : `${botHome(botId)}/${given}`;
+export function sharePath(given: string, botId: string, home: string | null = null): string | null {
+  const prefix = home ? `${home.replace(/\/+$/, "")}/` : null;
+  const raw = given.startsWith("~/") ? given.slice(2) : prefix && given.startsWith(prefix) ? given.slice(prefix.length) : given.startsWith("/") ? null : `${botHome(botId)}/${given}`;
   if (raw === null) return null;
   const parts: string[] = [];
   for (const part of raw.split("/")) {
@@ -215,13 +216,13 @@ export function baseTools(context: Context): Record<string, DriverTool> {
       },
     },
     send_file: {
-      description: "Hand the person a file from the computer: it appears in this conversation with a download button. Paths are relative to your home folder, or start with ~/ for the agent's home (like ~/.team/<team>/report.html).",
+      description: "Hand the person a file from the computer: it appears in this conversation with a download button. Paths are relative to your home folder, or start with ~/ for the person's home on the computer (like ~/.team/<team>/report.html).",
       inputSchema: schema({ path: { type: "string", description: "The file, like report.pdf or ~/.team/<team>/hello-world.html." }, note: { type: "string", description: "A line to go with it, optional." } }, ["path"]),
       execute: async (input) => {
         const given = String(input.path ?? "").trim();
         if (!given) return "NOT sent: which file?";
-        const relative = sharePath(given, bot.id);
-        if (!relative) return "NOT sent: the file must be inside the agent's home (/home/agent).";
+        const relative = sharePath(given, bot.id, boxHome(bot.userId));
+        if (!relative) return "NOT sent: the file must be inside the person's home on the computer (~).";
         let data: Uint8Array;
         try {
           data = await readBoxFileBytes(box, relative);

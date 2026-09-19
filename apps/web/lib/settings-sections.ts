@@ -4,15 +4,16 @@ import { Blocks, BrainCircuit, KeyRound, LogIn, Monitor, Sparkles, UserRound, Us
 /*
  * Settings is one route with sections: /app/settings is the account,
  * /app/settings/<id> the rest. Kept out of the client component so the
- * server route can validate a section too. The account, the apps and the
- * secrets are each person's own; the rest is the admin's, since it changes
- * the server for everyone.
+ * server route can validate a section too. The account, the AI, the
+ * computer (your own account on it), the apps and the secrets are each
+ * person's own; the rest is the admin's, since it changes the server for
+ * everyone. Inside Computer, Update and Reset are the admin's.
  */
 export const SETTINGS_SECTIONS = [
   { id: "account", label: "Account", blurb: "Your picture, password, theme and notifications.", icon: UserRound, admin: false },
   { id: "team", label: "Team", blurb: "The time zone, and how many bots work at once.", icon: Users, admin: true },
-  { id: "ai", label: "AI", blurb: "What the bots run on: Claude Code, Codex or Grok, on your plan or an API key.", icon: BrainCircuit, admin: true },
-  { id: "computer", label: "Computer", blurb: "What the bots' computer runs, and Update and Reset.", icon: Monitor, admin: true },
+  { id: "ai", label: "AI", blurb: "What your bots run on: Claude Code, Codex or Grok, on your plan or your API key.", icon: BrainCircuit, admin: false },
+  { id: "computer", label: "Computer", blurb: "Your account on the bots' computer: your sign-ins, and what runs there.", icon: Monitor, admin: false },
   { id: "skills", label: "Skills", blurb: "How to do a job, written once and shared by every bot.", icon: Sparkles, admin: true },
   { id: "apps", label: "Apps", blurb: "Your Composio key, your connected apps and your MCP servers.", icon: Blocks, admin: false },
   { id: "secrets", label: "Secrets", blurb: "Your keys the bots use but never see.", icon: KeyRound, admin: false },

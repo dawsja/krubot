@@ -1,11 +1,13 @@
 import { skillMentions, type Skill } from "@krubot/shared";
-import { boxConfig, deleteBoxFile, readBoxFile, writeBoxFile } from "./box.ts";
+import { boxConfig, deleteBoxSkill, listBoxSkills, writeBoxSkill } from "./box.ts";
 import { listSkills } from "./data/skills.ts";
 
 /*
- * Skills on the box: every skill is also a file at ~/.skills/<slug>/SKILL.md,
- * so a bot can read it with its own tools and the person can see it from
- * the computer. The library in the database is the source of truth.
+ * Skills on the box: every skill is also a file at ~/.skills/<slug>/SKILL.md
+ * in every home (one library, linked into each account), so a bot can read
+ * it with its own tools and the person can see it from the computer. The
+ * library in the database is the source of truth; the mirror is rewritten
+ * at start, since it lives in the container, and on every change.
  */
 
 export async function syncSkills(): Promise<void> {
@@ -14,10 +16,10 @@ export async function syncSkills(): Promise<void> {
   try {
     const skills = listSkills();
     const keep = new Set(skills.map((s) => s.slug));
-    for (const skill of skills) await writeBoxFile(box, `.skills/${skill.slug}/SKILL.md`, renderSkill(skill));
-    const listing = await readBoxFile(box, ".skills").catch(() => null);
-    for (const name of listing?.directory ?? []) {
-      if (!keep.has(name)) await deleteBoxFile(box, `.skills/${name}`).catch(() => undefined);
+    for (const skill of skills) await writeBoxSkill(box, skill.slug, renderSkill(skill));
+    const listing = await listBoxSkills(box).catch(() => null);
+    for (const name of listing?.skills ?? []) {
+      if (!keep.has(name)) await deleteBoxSkill(box, name).catch(() => undefined);
     }
   } catch (error) {
     console.warn(`[kru] could not sync skills to the box: ${error instanceof Error ? error.message : error}`);

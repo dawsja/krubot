@@ -1,23 +1,26 @@
 /**
  * The Kru Bot box: the computer every bot works on. A small HTTP server
- * that the Kru Bot API drives. Each bot gets its own home under BOTS_DIR
- * (the agent user's ~/.bots/<id>), where its Claude Code session runs, and
- * where it keeps its MEMORY.md, notes and scripts between turns. Everything
- * a bot runs happens as the unprivileged `agent` user; this server runs as
- * root only so it can drop to that user.
+ * that the Kru Bot API drives. Every person has a Linux account here
+ * (accounts.mjs): the admin is the `agent` user the box always had, and
+ * everyone else gets a user and a private home of their own. Each bot gets
+ * its own home under its owner's ~/.bots/<id>, where its CLI session runs
+ * and where it keeps its MEMORY.md, notes and scripts between turns.
+ * Everything a bot runs happens as its owner's unprivileged user; this
+ * server runs as root only so it can make those users and drop to them.
  *
  * Bots run on persistent CLI sessions: Claude Code (agents.mjs), OpenAI
  * Codex (codex.mjs) or Grok Build (grok.mjs), one process per bot and
  * thread, kept across turns, with Kru Bot's tools and its permission
  * prompts reaching the API over the `kru` MCP bridge (bridge.mjs).
  *
- * People get the same computer: interactive terminals (PTYs, via node-pty)
- * and a desktop, a GNOME session on a VNC server bound to loopback,
- * bridged to the browser over the HTTP API (VNC bytes out as server-sent
- * events, input back as POSTs).
+ * People get the same computer, each as themselves: interactive terminals
+ * (PTYs, via node-pty) and a desktop each, a GNOME session on a VNC server
+ * bound to loopback, bridged to the browser over the HTTP API (VNC bytes
+ * out as server-sent events, input back as POSTs).
  *
  * The API authenticates with a bearer token that is read from BOX_TOKEN or
- * generated once into STATE_DIR/token.
+ * generated once into STATE_DIR/token, and names the person every request
+ * is for in the X-Kru-User header.
  */
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -26,6 +29,7 @@ import { createServer } from "node:http";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Accounts, USER_ID } from "./accounts.mjs";
 import { checkClaude } from "./claude.mjs";
 import { AgentSession, PERMISSION_MODES, authStatus, forgetClaudeVersion, parseAccess } from "./agents.mjs";
 import { CODEX_BIN, CodexSession } from "./codex.mjs";
@@ -34,30 +38,21 @@ import { GROK_BIN, GrokSession } from "./grok.mjs";
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
 const STATE_DIR = process.env.STATE_DIR || "/state";
-/** The user commands run as; the bots' homes belong to it. */
+/** The admin's user: the one the box always had. Its home and folders are volumes. */
 const AGENT_UID = Number(process.env.AGENT_UID || 1001);
 const AGENT_GID = Number(process.env.AGENT_GID || 1001);
 const AGENT_HOME = process.env.AGENT_HOME || "/home/agent";
 /**
- * Package caches, kept on a volume so installs come from disk instead of
- * the network. Every package manager is pointed here.
+ * Where everyone else's home is: HOMES_DIR/<linux name>, on a volume.
+ * Inside each, the same hidden folders as the agent's: .bots, .team,
+ * .cache, and the CLIs' sign-ins (.claude, .codex, .grok).
  */
-const CACHE_DIR = process.env.CACHE_DIR || path.join(AGENT_HOME, ".cache");
+const HOMES_DIR = process.env.HOMES_DIR || "/home";
 /**
- * Where the Claude Code CLI keeps its login and settings, on a volume so a
- * sign-in survives restarts. The box never reads what's in it.
+ * The skills library mirror, one for everyone: root's, readable by all,
+ * linked as ~/.skills in every home. The API writes it through /skills.
  */
-const CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(AGENT_HOME, ".claude");
-/** Codex's and Grok's homes: their sign-ins, sessions and config, on the home volume. */
-const CODEX_HOME = process.env.CODEX_HOME || path.join(AGENT_HOME, ".codex");
-const GROK_HOME = process.env.GROK_HOME || path.join(AGENT_HOME, ".grok");
-/** Where the CLIs keep a person's sign-in: never readable through the files API. */
-const LOGIN_DIRS = [CLAUDE_CONFIG_DIR, CODEX_HOME, GROK_HOME];
-/** Where every bot has its home: BOTS_DIR/<bot id>. On a volume. */
-const BOTS_DIR = process.env.BOTS_DIR || path.join(AGENT_HOME, ".bots");
-/** The team's shared space and the skills library mirror. Hidden, like the bots' homes, so the home looks like a person's. */
-const TEAM_DIR = path.join(AGENT_HOME, ".team");
-const SKILLS_DIR = path.join(AGENT_HOME, ".skills");
+const SKILLS_ROOT = process.env.SKILLS_DIR || "/srv/kru/skills";
 /** Unix sockets the bots' MCP bridge connects to, one per session. */
 const AGENT_SOCKET_DIR = process.env.AGENT_SOCKET_DIR || "/tmp/kru-agents";
 /** The bridge script Claude Code launches as the `kru` MCP server. */
@@ -84,12 +79,10 @@ const MAX_TERMINALS = 8;
 const TERMINAL_IDLE_MS = 30 * 60 * 1000;
 const SSE_KEEPALIVE_MS = 15_000;
 
-/** The X display and loopback VNC port the desktop runs on. */
+/** The X display and loopback VNC port the agent's desktop runs on; each other account's is one slot up. */
 const DESKTOP_DISPLAY = Number(process.env.DESKTOP_DISPLAY || 1);
 const DESKTOP_VNC_PORT = Number(process.env.DESKTOP_VNC_PORT || 5901);
 const DESKTOP_SCRIPT = process.env.DESKTOP_SCRIPT || path.join(path.dirname(fileURLToPath(import.meta.url)), "desktop.sh");
-/** Per-user runtime dir for the session bus, dconf and friends. */
-const RUNTIME_DIR = process.env.XDG_RUNTIME_DIR_AGENT || path.join(AGENT_HOME, ".run");
 const MAX_DESKTOP_CONNECTIONS = 4;
 /** How long the desktop gets to come up before a connection is refused. */
 const DESKTOP_START_MS = 30_000;
@@ -104,19 +97,65 @@ const UPDATE_TIMEOUT_MS = 30 * 60 * 1000;
 /** Log kept from an update, for the API to show. */
 const UPDATE_LOG_BYTES = 64 * 1024;
 
-/** Hands a path to the agent user; a no-op when the box isn't root (development). */
-function own(target) {
+/** uid/gid to drop to; none when the box isn't root (development). */
+const isRoot = process.getuid?.() === 0;
+
+/**
+ * Everyone's account on the box. The agent's folders may be moved by the
+ * environment (they are separate volumes); everyone else's sit in their home.
+ */
+export const accounts = new Accounts({
+  stateDir: STATE_DIR,
+  homesDir: HOMES_DIR,
+  root: isRoot,
+  skillsRoot: SKILLS_ROOT,
+  agent: {
+    name: "agent",
+    uid: AGENT_UID,
+    gid: AGENT_GID,
+    home: AGENT_HOME,
+    dirs: {
+      bots: process.env.BOTS_DIR || undefined,
+      cache: process.env.CACHE_DIR || undefined,
+      claude: process.env.CLAUDE_CONFIG_DIR || undefined,
+      codex: process.env.CODEX_HOME || undefined,
+      grok: process.env.GROK_HOME || undefined,
+      run: process.env.XDG_RUNTIME_DIR_AGENT || undefined,
+    },
+  },
+  log: (text) => console.info(`[box] ${text}`),
+});
+
+/** The agent's account for things that aren't anyone's in particular (version checks, the reset). */
+function agentAccount() {
+  return accounts.admin() ?? accounts.agentAccount();
+}
+
+/** What a spawn needs to run as this account; nothing when the box isn't root. */
+function asUser(account) {
+  return account.uid !== undefined ? { uid: account.uid, gid: account.gid } : {};
+}
+
+/** Hands a path to the account; a no-op when the box isn't root (development). */
+function own(target, account) {
+  if (account.uid === undefined) return;
   try {
-    fs.chownSync(target, AGENT_UID, AGENT_GID);
+    fs.chownSync(target, account.uid, account.gid);
   } catch {
     /* not root */
   }
 }
 
+/** The folders the files API never opens in a home: the CLIs' sign-ins and the skills link (root's). */
+function forbiddenIn(account) {
+  return [...account.logins, account.skills];
+}
+
 export class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, code = null) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -205,14 +244,17 @@ export function inside(root, relative) {
   return full;
 }
 
+/** The agent's sign-in folders: what the tests and the defaults below keep private. */
+const AGENT_LOGIN_DIRS = [process.env.CLAUDE_CONFIG_DIR || path.join(AGENT_HOME, ".claude"), process.env.CODEX_HOME || path.join(AGENT_HOME, ".codex"), process.env.GROK_HOME || path.join(AGENT_HOME, ".grok")];
+
 /**
- * Resolves a path inside the agent's home, for the bots' own use of the
+ * Resolves a path inside a person's home, for the bots' own use of the
  * box: anywhere under home except the CLIs' logins, and never .git.
  */
-export function insideHome(relative, home = AGENT_HOME, forbidden = LOGIN_DIRS) {
+export function insideHome(relative, home = AGENT_HOME, forbidden = AGENT_LOGIN_DIRS) {
   const full = inside(home, relative);
   for (const dir of Array.isArray(forbidden) ? forbidden : [forbidden]) {
-    if (full === dir || full.startsWith(dir + path.sep)) throw new HttpError(400, "Path is inside a CLI's sign-in");
+    if (full === dir || full.startsWith(dir + path.sep)) throw new HttpError(400, "Path is inside a private folder (a CLI's sign-in or the skills link)");
   }
   return full;
 }
@@ -222,7 +264,7 @@ export function insideHome(relative, home = AGENT_HOME, forbidden = LOGIN_DIRS) 
  * must still be inside, so a link can't point a read at a sign-in or at
  * the rest of the machine.
  */
-export function realInsideHome(relative, home = AGENT_HOME, forbidden = LOGIN_DIRS) {
+export function realInsideHome(relative, home = AGENT_HOME, forbidden = AGENT_LOGIN_DIRS) {
   const full = insideHome(relative, home, forbidden);
   let real;
   try {
@@ -238,54 +280,54 @@ export function realInsideHome(relative, home = AGENT_HOME, forbidden = LOGIN_DI
  * The working directory for a command on the box: the agent's home, or a
  * folder under it. Absolute paths must stay inside.
  */
-export function boxCwd(given, home = AGENT_HOME, forbidden = LOGIN_DIRS) {
+export function boxCwd(given, home = AGENT_HOME, forbidden = AGENT_LOGIN_DIRS) {
   if (given === undefined || given === null || given === "") return home;
   if (typeof given !== "string") throw new HttpError(400, "cwd must be a string");
   const relative = path.isAbsolute(given) ? path.relative(home, given) || "." : given;
-  if (relative.startsWith("..")) throw new HttpError(400, "cwd is outside the agent's home");
+  if (relative.startsWith("..")) throw new HttpError(400, "cwd is outside the person's home");
   return insideHome(relative, home, forbidden);
 }
 
-/** A bot's home folder, created as the agent user on first use. */
-export function botDir(id) {
+/** A bot's home folder in its owner's home, created as the owner on first use. */
+export function botDir(account, id) {
   if (!ID.test(id)) throw new HttpError(400, "Bad bot id");
-  const dir = path.join(BOTS_DIR, id);
+  const dir = path.join(account.bots, id);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
-    own(dir);
+    own(dir, account);
   }
   return dir;
 }
 
 // ---------- processes ----------
 
-/** uid/gid to drop to; none when the box isn't root (development). */
-const asAgent = process.getuid?.() === 0 ? { uid: AGENT_UID, gid: AGENT_GID } : {};
-
-function agentEnv(extra = {}) {
+/** The environment a person's processes get: their home, their caches, their own CLI sign-ins. */
+function agentEnv(account, extra = {}) {
+  const cache = account.cache;
   return {
     PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-    HOME: AGENT_HOME,
-    USER: "agent",
+    HOME: account.home,
+    USER: account.name,
+    LOGNAME: account.name,
     LANG: "C.UTF-8",
     TERM: "dumb",
     CI: "1",
     GIT_TERMINAL_PROMPT: "0",
     npm_config_update_notifier: "false",
     npm_config_fund: "false",
-    XDG_CACHE_HOME: CACHE_DIR,
-    BUN_INSTALL_CACHE_DIR: path.join(CACHE_DIR, "bun"),
-    npm_config_cache: path.join(CACHE_DIR, "npm"),
-    npm_config_store_dir: path.join(CACHE_DIR, "pnpm"),
-    YARN_CACHE_FOLDER: path.join(CACHE_DIR, "yarn"),
-    PIP_CACHE_DIR: path.join(CACHE_DIR, "pip"),
-    UV_CACHE_DIR: path.join(CACHE_DIR, "uv"),
+    XDG_CACHE_HOME: cache,
+    BUN_INSTALL_CACHE_DIR: path.join(cache, "bun"),
+    npm_config_cache: path.join(cache, "npm"),
+    npm_config_store_dir: path.join(cache, "pnpm"),
+    YARN_CACHE_FOLDER: path.join(cache, "yarn"),
+    PIP_CACHE_DIR: path.join(cache, "pip"),
+    UV_CACHE_DIR: path.join(cache, "uv"),
     NEXT_TELEMETRY_DISABLED: "1",
     DO_NOT_TRACK: "1",
-    // Shared by bots, terminals and the desktop, so one sign-in serves all.
-    CLAUDE_CONFIG_DIR,
-    CODEX_HOME,
-    GROK_HOME,
+    // Shared by the person's bots, terminals and desktop, so one sign-in serves all of theirs.
+    CLAUDE_CONFIG_DIR: account.claude,
+    CODEX_HOME: account.codex,
+    GROK_HOME: account.grok,
     ...extra,
   };
 }
@@ -303,16 +345,16 @@ export function capOutput(text, limit = MAX_OUTPUT) {
 }
 
 /**
- * Runs a command as the agent user in `cwd`, in its own process group so a
+ * Runs a command as the account in `cwd`, in its own process group so a
  * timeout kills everything it started. Resolves with the exit code and the
  * combined, capped output.
  */
-export function runAsAgent(argv, { cwd, timeoutMs, env, onChunk }) {
+export function runAsUser(account, argv, { cwd, timeoutMs, env, onChunk }) {
   return new Promise((resolve, reject) => {
     const child = spawn(argv[0], argv.slice(1), {
       cwd,
-      env: agentEnv(env),
-      ...asAgent,
+      env: agentEnv(account, env),
+      ...asUser(account),
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -356,8 +398,8 @@ export function runAsAgent(argv, { cwd, timeoutMs, env, onChunk }) {
 
 // ---------- files ----------
 
-function readFile(relative) {
-  const full = realInsideHome(relative);
+function readFile(account, relative) {
+  const full = realInsideHome(relative, account.home, forbiddenIn(account));
   let stat;
   try {
     stat = fs.statSync(full);
@@ -374,8 +416,8 @@ function readFile(relative) {
 }
 
 /** A file's bytes, for a bot handing it to the person. */
-function sendRawFile(response, relative) {
-  const full = realInsideHome(relative);
+function sendRawFile(response, account, relative) {
+  const full = realInsideHome(relative, account.home, forbiddenIn(account));
   const stat = fs.statSync(full);
   if (!stat.isFile()) throw new HttpError(400, "That's a folder, not a file");
   if (stat.size > MAX_SHARE_BYTES) throw new HttpError(413, `File is larger than ${MAX_SHARE_BYTES / 1024 / 1024} MB`);
@@ -385,13 +427,13 @@ function sendRawFile(response, relative) {
   return STREAMED;
 }
 
-function writeFile(relative, content) {
+function writeFile(account, relative, content) {
   if (typeof content !== "string") throw new HttpError(400, "Content must be a string");
   if (Buffer.byteLength(content, "utf8") > MAX_FILE_BYTES) {
     throw new HttpError(413, "Content is larger than 1 MB");
   }
-  const full = insideHome(relative);
-  // Create parent folders as the agent so it can keep working in them.
+  const full = insideHome(relative, account.home, forbiddenIn(account));
+  // Create parent folders as the person so they can keep working in them.
   let parent = path.dirname(full);
   const created = [];
   while (!fs.existsSync(parent)) {
@@ -400,20 +442,55 @@ function writeFile(relative, content) {
   }
   for (const folder of created.reverse()) {
     fs.mkdirSync(folder);
-    own(folder);
+    own(folder, account);
   }
   // Atomic: a crash mid-write leaves the old file intact.
   const tmp = `${full}.${randomBytes(4).toString("hex")}.tmp`;
   fs.writeFileSync(tmp, content, { mode: 0o600 });
-  own(tmp);
+  own(tmp, account);
   fs.renameSync(tmp, full);
   return { ok: true };
 }
 
-function deleteFile(relative) {
-  const full = insideHome(relative);
-  if (full === AGENT_HOME || full === BOTS_DIR) throw new HttpError(400, "Refusing to delete that folder");
+function deleteFile(account, relative) {
+  const full = insideHome(relative, account.home, forbiddenIn(account));
+  if (full === account.home || full === account.bots) throw new HttpError(400, "Refusing to delete that folder");
   fs.rmSync(full, { recursive: true, force: true });
+  return { ok: true };
+}
+
+// ---------- skills ----------
+
+/**
+ * The skills library mirror, ~/.skills in every home: root's, read by all,
+ * written only here. The API is the source of truth and rewrites it at
+ * start and on every change.
+ */
+const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+function listSkillFiles() {
+  try {
+    return { skills: fs.readdirSync(SKILLS_ROOT).filter((name) => SLUG.test(name)).sort() };
+  } catch {
+    return { skills: [] };
+  }
+}
+
+function writeSkillFile(slug, content) {
+  if (!SLUG.test(slug)) throw new HttpError(400, "Bad skill slug");
+  if (typeof content !== "string" || Buffer.byteLength(content, "utf8") > MAX_FILE_BYTES) throw new HttpError(400, "Bad skill content");
+  const dir = path.join(SKILLS_ROOT, slug);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+  const file = path.join(dir, "SKILL.md");
+  const tmp = `${file}.${randomBytes(4).toString("hex")}.tmp`;
+  fs.writeFileSync(tmp, content, { mode: 0o644 });
+  fs.renameSync(tmp, file);
+  return { ok: true };
+}
+
+function deleteSkillFile(slug) {
+  if (!SLUG.test(slug)) throw new HttpError(400, "Bad skill slug");
+  fs.rmSync(path.join(SKILLS_ROOT, slug), { recursive: true, force: true });
   return { ok: true };
 }
 
@@ -422,13 +499,12 @@ function deleteFile(relative) {
 const terminals = new Map();
 
 /**
- * Where a terminal starts: a bot's home, or the agent's home. Never
- * anywhere else, so a stray path can't open a shell outside the agent's
- * home.
+ * Where a terminal starts: a bot's home, or the person's own. Never
+ * anywhere else, so a stray path can't open a shell outside their home.
  */
-export function terminalCwd(bot) {
-  if (bot === undefined || bot === null || bot === "") return AGENT_HOME;
-  return botDir(bot);
+export function terminalCwd(account, bot) {
+  if (bot === undefined || bot === null || bot === "") return account.home;
+  return botDir(account, bot);
 }
 
 function terminalSize(body) {
@@ -437,9 +513,9 @@ function terminalSize(body) {
   return { cols, rows };
 }
 
-async function createTerminal(body) {
+async function createTerminal(account, body) {
   if (terminals.size >= MAX_TERMINALS) throw new HttpError(429, `At most ${MAX_TERMINALS} terminals at once`);
-  const cwd = terminalCwd(body.bot);
+  const cwd = terminalCwd(account, body.bot);
   const { cols, rows } = terminalSize(body);
   // Loaded on demand: node-pty is native, and nothing else needs it.
   const { default: pty } = await import("node-pty");
@@ -449,10 +525,10 @@ async function createTerminal(body) {
     cols,
     rows,
     cwd,
-    ...asAgent,
-    env: agentEnv({ TERM: "xterm-256color", COLORTERM: "truecolor", SHELL: "/bin/bash" }),
+    ...asUser(account),
+    env: agentEnv(account, { TERM: "xterm-256color", COLORTERM: "truecolor", SHELL: "/bin/bash" }),
   });
-  const terminal = { id, shell, feed: new Feed(), viewers: 0, idle: null };
+  const terminal = { id, user: account.id, shell, feed: new Feed(), viewers: 0, idle: null };
   terminals.set(id, terminal);
   shell.onData((data) => terminal.feed.publish({ data: Buffer.from(data).toString("base64") }));
   shell.onExit(({ exitCode }) => {
@@ -472,9 +548,10 @@ function touchTerminal(terminal) {
   }
 }
 
-function existingTerminal(id) {
+/** A terminal, when it is this person's; anyone else's is as good as missing. */
+function existingTerminal(account, id) {
   const terminal = terminals.get(id);
-  if (!terminal) throw new HttpError(404, "No such terminal");
+  if (!terminal || terminal.user !== account.id) throw new HttpError(404, "No such terminal");
   return terminal;
 }
 
@@ -495,13 +572,15 @@ function closeTerminal(id) {
 // ---------- desktop ----------
 
 /**
- * One desktop per box: desktop.sh starts a VNC X server on loopback and a
- * GNOME session as the agent user, in its own process group. It starts when
- * someone opens it, keeps running while the panel is hidden, and stops after
- * a long idle or on request. Browsers never reach the VNC port; each viewer
- * gets a loopback TCP connection bridged over the HTTP API instead.
+ * One desktop per person: desktop.sh starts a VNC X server on loopback and
+ * a GNOME session as their user, in its own process group, on the display
+ * and port of the account's slot. It starts when they open it, keeps
+ * running while the panel is hidden, and stops after a long idle or on
+ * request. Browsers never reach the VNC port; each viewer gets a loopback
+ * TCP connection bridged over the HTTP API instead.
  */
-let desktop = null;
+/** @type {Map<string, object>} by the account's id */
+const desktops = new Map();
 const connections = new Map();
 
 /** Clamps a requested desktop size to something an X server will accept. */
@@ -511,10 +590,15 @@ export function desktopSize(body) {
   return { width, height };
 }
 
-/** Tries a TCP connect to the VNC port, resolving with the socket. */
-function connectVnc() {
+/** The X display and VNC port an account's desktop uses: the agent's, plus its slot. */
+export function desktopSlot(account) {
+  return { display: DESKTOP_DISPLAY + account.slot, port: DESKTOP_VNC_PORT + account.slot };
+}
+
+/** Tries a TCP connect to a VNC port, resolving with the socket. */
+function connectVnc(port) {
   return new Promise((resolve, reject) => {
-    const socket = net.connect({ host: "127.0.0.1", port: DESKTOP_VNC_PORT });
+    const socket = net.connect({ host: "127.0.0.1", port });
     socket.once("connect", () => {
       socket.removeAllListeners("error");
       resolve(socket);
@@ -523,13 +607,20 @@ function connectVnc() {
   });
 }
 
-function desktopStatus() {
+function viewersOf(account) {
+  let n = 0;
+  for (const connection of connections.values()) if (connection.user === account.id) n += 1;
+  return n;
+}
+
+function desktopStatus(account) {
+  const desktop = desktops.get(account.id);
   return {
     running: Boolean(desktop),
     ready: Boolean(desktop?.ready),
     width: desktop?.width ?? null,
     height: desktop?.height ?? null,
-    viewers: connections.size,
+    viewers: viewersOf(account),
   };
 }
 
@@ -567,33 +658,35 @@ function ensureSystemBus() {
   systemBus = child;
 }
 
-/** Starts the desktop if it isn't running and waits until VNC answers. */
-async function ensureDesktop(body = {}) {
-  if (desktop) {
-    await desktop.readyPromise;
-    return desktopStatus();
+/** Starts the person's desktop if it isn't running and waits until VNC answers. */
+async function ensureDesktop(account, body = {}) {
+  const running = desktops.get(account.id);
+  if (running) {
+    await running.readyPromise;
+    return desktopStatus(account);
   }
   const { width, height } = desktopSize(body);
+  const { display, port } = desktopSlot(account);
   ensureSystemBus();
-  fs.mkdirSync(RUNTIME_DIR, { recursive: true, mode: 0o700 });
-  own(RUNTIME_DIR);
+  fs.mkdirSync(account.run, { recursive: true, mode: 0o700 });
+  own(account.run, account);
   const child = spawn("bash", [DESKTOP_SCRIPT], {
-    cwd: AGENT_HOME,
-    env: agentEnv({
-      DISPLAY: `:${DESKTOP_DISPLAY}`,
-      DESKTOP_VNC_PORT: String(DESKTOP_VNC_PORT),
+    cwd: account.home,
+    env: agentEnv(account, {
+      DISPLAY: `:${display}`,
+      DESKTOP_VNC_PORT: String(port),
       DESKTOP_WIDTH: String(width),
       DESKTOP_HEIGHT: String(height),
-      XDG_RUNTIME_DIR: RUNTIME_DIR,
-      XDG_CONFIG_HOME: path.join(AGENT_HOME, ".config"),
-      XDG_DATA_HOME: path.join(AGENT_HOME, ".local", "share"),
+      XDG_RUNTIME_DIR: account.run,
+      XDG_CONFIG_HOME: path.join(account.home, ".config"),
+      XDG_DATA_HOME: path.join(account.home, ".local", "share"),
     }),
-    ...asAgent,
+    ...asUser(account),
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const started = { child, width, height, ready: false, idle: null, readyPromise: null };
-  desktop = started;
+  const started = { user: account.id, port, child, width, height, ready: false, idle: null, readyPromise: null };
+  desktops.set(account.id, started);
   let log = "";
   const collect = (chunk) => {
     log = (log + chunk.toString("utf8")).slice(-4000);
@@ -601,46 +694,47 @@ async function ensureDesktop(body = {}) {
   child.stdout.on("data", collect);
   child.stderr.on("data", collect);
   child.on("exit", (code, signal) => {
-    const unexpected = desktop === started;
-    if (unexpected) desktop = null;
+    const unexpected = desktops.get(account.id) === started;
+    if (unexpected) desktops.delete(account.id);
     if (started.idle) clearTimeout(started.idle);
-    for (const connection of connections.values()) closeConnection(connection.id);
-    if (unexpected) console.warn(`[box] desktop exited (${signal ?? code}): ${log.trim().slice(-500)}`);
+    for (const connection of connections.values()) if (connection.user === account.id) closeConnection(connection.id);
+    if (unexpected) console.warn(`[box] ${account.name}'s desktop exited (${signal ?? code}): ${log.trim().slice(-500)}`);
   });
-  child.on("error", (error) => console.error("[box] desktop failed to start", error));
+  child.on("error", (error) => console.error(`[box] ${account.name}'s desktop failed to start`, error));
 
   started.readyPromise = (async () => {
     const deadline = Date.now() + DESKTOP_START_MS;
     while (Date.now() < deadline) {
-      if (desktop !== started) throw new HttpError(502, `The desktop didn't start: ${log.trim().slice(-300) || "no output"}`);
+      if (desktops.get(account.id) !== started) throw new HttpError(502, `The desktop didn't start: ${log.trim().slice(-300) || "no output"}`);
       try {
-        const probe = await connectVnc();
+        const probe = await connectVnc(port);
         probe.destroy();
         started.ready = true;
-        touchDesktop();
+        touchDesktop(account);
         return;
       } catch {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
     }
-    stopDesktop();
+    stopDesktop(account);
     throw new HttpError(504, "The desktop didn't start in time");
   })();
   await started.readyPromise;
-  return desktopStatus();
+  return desktopStatus(account);
 }
 
-function touchDesktop() {
+function touchDesktop(account) {
+  const desktop = desktops.get(account.id);
   if (!desktop) return;
   if (desktop.idle) clearTimeout(desktop.idle);
   desktop.idle = null;
-  if (connections.size === 0) desktop.idle = setTimeout(stopDesktop, DESKTOP_IDLE_MS);
+  if (viewersOf(account) === 0) desktop.idle = setTimeout(() => stopDesktop(account), DESKTOP_IDLE_MS);
 }
 
-function stopDesktop() {
-  const current = desktop;
-  desktop = null;
-  for (const connection of connections.values()) closeConnection(connection.id);
+function stopDesktop(account) {
+  const current = desktops.get(account.id);
+  desktops.delete(account.id);
+  for (const connection of connections.values()) if (connection.user === account.id) closeConnection(connection.id);
   if (!current) return { ok: true };
   if (current.idle) clearTimeout(current.idle);
   try {
@@ -659,32 +753,33 @@ function stopDesktop() {
   return { ok: true };
 }
 
-/** Opens a loopback VNC connection for one viewer; the stream claims it. */
-async function createConnection(body) {
-  if (connections.size >= MAX_DESKTOP_CONNECTIONS) {
+/** Opens a loopback VNC connection to the person's desktop for one viewer; the stream claims it. */
+async function createConnection(account, body) {
+  if (viewersOf(account) >= MAX_DESKTOP_CONNECTIONS) {
     throw new HttpError(429, `At most ${MAX_DESKTOP_CONNECTIONS} desktop viewers at once`);
   }
-  await ensureDesktop(body);
+  await ensureDesktop(account, body);
+  const desktop = desktops.get(account.id);
   let socket;
   try {
-    socket = await connectVnc();
+    socket = await connectVnc(desktopSlot(account).port);
   } catch (error) {
     throw new HttpError(502, `Could not reach the desktop's VNC server: ${error.message}`);
   }
   const id = randomBytes(8).toString("hex");
-  const connection = { id, socket, response: null, claim: null };
+  const connection = { id, user: account.id, socket, response: null, claim: null };
   socket.pause();
   socket.on("error", () => closeConnection(id));
   socket.on("close", () => closeConnection(id));
   connection.claim = setTimeout(() => closeConnection(id), CONNECTION_CLAIM_MS);
   connections.set(id, connection);
-  touchDesktop();
+  touchDesktop(account);
   return { id, width: desktop?.width ?? null, height: desktop?.height ?? null };
 }
 
-function existingConnection(id) {
+function existingConnection(account, id) {
   const connection = connections.get(id);
-  if (!connection) throw new HttpError(404, "No such desktop connection");
+  if (!connection || connection.user !== account.id) throw new HttpError(404, "No such desktop connection");
   return connection;
 }
 
@@ -696,8 +791,19 @@ function closeConnection(id) {
   connection.socket.destroy();
   connection.response?.end();
   connection.response = null;
-  touchDesktop();
+  const account = accounts.get(connection.user);
+  if (account) touchDesktop(account);
   return { ok: true };
+}
+
+/** Stops every desktop: for an update, or a shutdown. */
+function stopAllDesktops() {
+  for (const id of [...desktops.keys()]) {
+    const account = accounts.get(id);
+    if (account) stopDesktop(account);
+    else desktops.delete(id);
+  }
+  for (const connection of [...connections.values()]) closeConnection(connection.id);
 }
 
 /**
@@ -730,20 +836,20 @@ function streamConnection(request, response, connection) {
   socket.resume();
 }
 
-async function desktopRoute(request, response, parts) {
+async function desktopRoute(request, response, parts, account) {
   if (parts.length === 1) {
-    if (request.method === "GET") return desktopStatus();
-    if (request.method === "POST") return ensureDesktop(await readJson(request));
-    if (request.method === "DELETE") return stopDesktop();
+    if (request.method === "GET") return desktopStatus(account);
+    if (request.method === "POST") return ensureDesktop(account, await readJson(request));
+    if (request.method === "DELETE") return stopDesktop(account);
     throw new HttpError(404, "Not found");
   }
   if (parts[1] !== "connections") throw new HttpError(404, "Not found");
   const id = parts[2];
   const action = parts[3];
-  if (request.method === "POST" && !id) return createConnection(await readJson(request));
+  if (request.method === "POST" && !id) return createConnection(account, await readJson(request));
   if (!id) throw new HttpError(404, "Not found");
+  const connection = existingConnection(account, id);
   if (request.method === "DELETE" && !action) return closeConnection(id);
-  const connection = existingConnection(id);
   if (request.method === "GET" && action === "stream") {
     streamConnection(request, response, connection);
     return STREAMED;
@@ -816,12 +922,23 @@ function refuseWhileUpdating() {
   if (update && update.finishedAt === null) throw new HttpError(503, "The computer is updating; try again in a few minutes.");
 }
 
-/** Stops everything that uses the computer, keeping the bots' sessions resumable. */
+/** Stops everything that uses the computer, everyone's, keeping the bots' sessions resumable. */
 async function pauseEverything() {
-  stopDesktop();
+  stopAllDesktops();
   for (const id of [...terminals.keys()]) closeTerminal(id);
   await Promise.allSettled([...agents.values()].map((agent) => agent.close({ keepSession: true })));
   agents.clear();
+}
+
+/** Stops one person's use of the computer for good: before their account goes. */
+async function closeAccountWork(account) {
+  stopDesktop(account);
+  for (const [id, terminal] of [...terminals]) if (terminal.user === account.id) closeTerminal(id);
+  for (const [id, agent] of [...agents]) {
+    if (agent.user !== account.id) continue;
+    agents.delete(id);
+    await agent.close({ keepSession: false });
+  }
 }
 
 async function startUpdate() {
@@ -860,20 +977,26 @@ async function startUpdate() {
 }
 
 /**
- * Reset: the agent's home goes back to empty, except the bots' homes, the
- * team's shared files, the skills library and the Claude sign-in. Global
- * installs, dotfiles, browser profiles and caches go. The API rebuilds the
- * container afterwards when it can, so the image's own layer is fresh too.
+ * Reset: the admin's home (the agent's) goes back to empty, except the
+ * bots' homes, the team's shared files, the skills link and the CLI
+ * sign-ins. Global installs, dotfiles, browser profiles and caches go.
+ * Other people's homes are their own and stay as they are. The API
+ * rebuilds the container afterwards when it can, so the image's own layer
+ * is fresh too.
  */
-const RESET_KEEPS = new Set([path.basename(BOTS_DIR), path.basename(TEAM_DIR), path.basename(SKILLS_DIR), ...LOGIN_DIRS.map((dir) => path.basename(dir))]);
+function resetKeeps(account) {
+  return new Set([account.bots, account.team, account.skills, ...account.logins].map((dir) => path.basename(dir)));
+}
 
 async function resetHome() {
   if (update && update.finishedAt === null) throw new HttpError(409, "An update is running");
   await pauseEverything();
+  const account = agentAccount();
+  const keeps = resetKeeps(account);
   const removed = [];
-  for (const entry of fs.readdirSync(AGENT_HOME)) {
-    if (RESET_KEEPS.has(entry)) continue;
-    const full = path.join(AGENT_HOME, entry);
+  for (const entry of fs.readdirSync(account.home)) {
+    if (keeps.has(entry)) continue;
+    const full = path.join(account.home, entry);
     // A mounted volume can't be removed, only emptied.
     try {
       fs.rmSync(full, { recursive: true, force: true });
@@ -882,26 +1005,24 @@ async function resetHome() {
     }
     removed.push(entry);
   }
-  for (const dir of [CACHE_DIR, RUNTIME_DIR]) {
-    fs.mkdirSync(dir, { recursive: true });
-    own(dir);
-  }
+  accounts.materialize(account);
   versionsCache = null;
   return { ok: true, removed };
 }
 
 /**
- * Whether Codex and Grok are installed and signed in, for Settings and the
- * setup. Codex answers `codex login status`; Grok has no such command, so
- * its sign-in file's presence stands in (never its contents).
+ * Whether Codex and Grok are installed and signed in for this person, for
+ * Settings and the setup. Codex answers `codex login status`; Grok has no
+ * such command, so its sign-in file's presence stands in (never its
+ * contents).
  */
-async function enginesAuth() {
+async function enginesAuth(account) {
   const codex = await new Promise((resolve) => {
-    if (!fs.existsSync(CODEX_HOME)) {
+    if (!fs.existsSync(account.codex)) {
       commandVersion(CODEX_BIN, ["--version"]).then((version) => resolve({ installed: version !== null, loggedIn: false, detail: "Not logged in" }));
       return;
     }
-    const child = spawn(CODEX_BIN, ["login", "status"], { env: agentEnv(), ...asAgent, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(CODEX_BIN, ["login", "status"], { env: agentEnv(account), ...asUser(account), stdio: ["ignore", "pipe", "pipe"] });
     const chunks = [];
     child.stdout.on("data", (chunk) => chunks.push(chunk));
     child.stderr.on("data", (chunk) => chunks.push(chunk));
@@ -917,7 +1038,7 @@ async function enginesAuth() {
     });
   });
   const grokVersion = await commandVersion(GROK_BIN, ["--version"]);
-  const grokSignedIn = fs.existsSync(path.join(GROK_HOME, "auth.json"));
+  const grokSignedIn = fs.existsSync(path.join(account.grok, "auth.json"));
   return { codex, grok: { installed: grokVersion !== null, loggedIn: grokSignedIn, detail: grokSignedIn ? "Signed in" : "Not signed in" } };
 }
 
@@ -927,7 +1048,8 @@ const VERSIONS_CACHE_MS = 5 * 60 * 1000;
 
 function commandVersion(command, args) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { env: agentEnv(), ...asAgent, stdio: ["ignore", "pipe", "ignore"] });
+    const account = agentAccount();
+    const child = spawn(command, args, { env: agentEnv(account), ...asUser(account), stdio: ["ignore", "pipe", "ignore"] });
     const chunks = [];
     child.stdout.on("data", (chunk) => chunks.push(chunk));
     child.on("error", () => resolve(null));
@@ -994,14 +1116,16 @@ export const MODEL_ID = /^[A-Za-z0-9._:/-]{0,120}$/;
 const agents = new Map();
 
 /**
- * The session for one (bot, thread) pair on one engine. Its process runs
- * in the bot's home, so the CLI's own file tools and shell work there. A
- * switch of engine closes the old session: its memory lives in that CLI.
+ * The session for one (bot, thread) pair on one engine, as the bot's
+ * owner. Its process runs in the bot's home, so the CLI's own file tools
+ * and shell work there. A switch of engine closes the old session: its
+ * memory lives in that CLI.
  */
-async function agentFor(id, bot, engine = "claude") {
+async function agentFor(account, id, bot, engine = "claude") {
   if (!ID.test(id)) throw new HttpError(400, "Bad agent id");
-  const cwd = botDir(bot);
+  const cwd = botDir(account, bot);
   let agent = agents.get(id);
+  if (agent && agent.user !== account.id) throw new HttpError(404, "No such agent");
   if (agent && agent.engine !== engine) {
     agents.delete(id);
     await agent.close({ keepSession: false });
@@ -1012,16 +1136,23 @@ async function agentFor(id, bot, engine = "claude") {
     agent = new Session({
       id,
       cwd,
-      env: agentEnv(),
-      ...asAgent,
+      env: agentEnv(account),
+      ...asUser(account),
       socketDir: AGENT_SOCKET_DIR,
       mcpScript: KRU_MCP_SCRIPT,
-      logDir: path.join(BOTS_DIR, ".protocol"),
+      logDir: path.join(account.bots, ".protocol"),
       onWarning: (text) => console.warn(`[box] ${id}: ${text}`),
     });
+    agent.user = account.id;
     agents.set(id, agent);
   }
   return agent;
+}
+
+/** A running session, when it is this person's. */
+function ownAgent(account, id) {
+  const agent = agents.get(id);
+  return agent && agent.user === account.id ? agent : undefined;
 }
 
 /**
@@ -1032,7 +1163,7 @@ async function agentFor(id, bot, engine = "claude") {
  * response interrupts the turn. A refused resume is retried once on a fresh
  * session, reported with `recovered: true` so the API can replay context.
  */
-async function agentTurnRoute(request, response, id) {
+async function agentTurnRoute(request, response, id, account) {
   const body = await readJson(request, MAX_TURN_BODY_BYTES);
   const engine = body.engine ?? "claude";
   if (!Object.hasOwn(ENGINES, engine)) throw new HttpError(400, "Unknown engine");
@@ -1047,8 +1178,8 @@ async function agentTurnRoute(request, response, id) {
   const permission = PERMISSION_MODES.includes(body.permission) ? body.permission : "ask";
   const timeoutMs = Math.min(Math.max(Number(body.timeoutMs) || MAX_AGENT_TURN_MS, 1000), MAX_AGENT_TURN_MS);
   const images = Array.isArray(body.attachments) ? body.attachments : [];
-  if (agents.get(id)?.turn) throw new HttpError(409, "This bot is already answering");
-  const agent = await agentFor(id, body.bot, engine);
+  if (ownAgent(account, id)?.turn) throw new HttpError(409, "This bot is already answering");
+  const agent = await agentFor(account, id, body.bot, engine);
 
   response.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -1083,29 +1214,30 @@ async function agentTurnRoute(request, response, id) {
   return STREAMED;
 }
 
-async function agentRoute(request, response, parts) {
+async function agentRoute(request, response, parts, account) {
   const id = parts[1];
   const action = parts[2];
   if (request.method === "GET" && !id) {
-    return { agents: [...agents.values()].map((agent) => ({ id: agent.id, running: agent.running, busy: Boolean(agent.turn) })) };
+    // The whole list is the API's to narrow: it answers the admin with every session and a person with theirs.
+    return { agents: [...agents.values()].map((agent) => ({ id: agent.id, user: agent.user ?? null, running: agent.running, busy: Boolean(agent.turn) })) };
   }
   if (!id) throw new HttpError(404, "Not found");
-  if (request.method === "POST" && action === "turn") return agentTurnRoute(request, response, id);
+  if (request.method === "POST" && action === "turn") return agentTurnRoute(request, response, id, account);
   if (request.method === "POST" && action === "tool-result") {
     const body = await readJson(request);
-    const agent = agents.get(id);
+    const agent = ownAgent(account, id);
     if (!agent || typeof body.callId !== "string") throw new HttpError(404, "No such call");
     const content = typeof body.content === "string" ? body.content : JSON.stringify(body.content ?? "");
     if (!agent.answerTool(body.callId, { content, isError: Boolean(body.isError) })) throw new HttpError(404, "No such call");
     return { ok: true };
   }
   if (request.method === "POST" && action === "interrupt") {
-    const agent = agents.get(id);
+    const agent = ownAgent(account, id);
     if (agent?.turn) agent.kill();
     return { ok: true, interrupted: Boolean(agent?.turn) };
   }
   if (request.method === "DELETE" && !action) {
-    const agent = agents.get(id);
+    const agent = ownAgent(account, id);
     if (agent) {
       agents.delete(id);
       await agent.close({ keepSession: false });
@@ -1115,13 +1247,13 @@ async function agentRoute(request, response, parts) {
   throw new HttpError(404, "Not found");
 }
 
-async function terminalRoute(request, response, parts) {
+async function terminalRoute(request, response, parts, account) {
   const id = parts[1];
   const action = parts[2];
-  if (request.method === "POST" && !id) return createTerminal(await readJson(request));
+  if (request.method === "POST" && !id) return createTerminal(account, await readJson(request));
   if (!id) throw new HttpError(404, "Not found");
+  const terminal = existingTerminal(account, id);
   if (request.method === "DELETE" && !action) return closeTerminal(id);
-  const terminal = existingTerminal(id);
   if (request.method === "GET" && action === "stream") {
     terminal.viewers += 1;
     touchTerminal(terminal);
@@ -1146,6 +1278,47 @@ async function terminalRoute(request, response, parts) {
   throw new HttpError(404, "Not found");
 }
 
+/**
+ * Who a request is for: the X-Kru-User header names a person the API has
+ * given an account (POST /accounts). Anything about a home needs one; a
+ * missing account answers 404 with `no_account`, so the API makes it and
+ * tries again.
+ */
+function accountFor(request) {
+  const id = String(request.headers["x-kru-user"] ?? "").trim();
+  if (!id) throw new HttpError(400, "Missing X-Kru-User");
+  if (!USER_ID.test(id)) throw new HttpError(400, "Bad user id");
+  const account = accounts.get(id);
+  if (!account) throw new HttpError(404, "No such account on the box", "no_account");
+  return account;
+}
+
+async function accountsRoute(request, parts) {
+  if (request.method === "POST" && parts.length === 1) {
+    const body = await readJson(request);
+    if (typeof body.id !== "string" || !USER_ID.test(body.id)) throw new HttpError(400, "Bad user id");
+    let account;
+    try {
+      account = accounts.ensure({ id: body.id, name: typeof body.name === "string" ? body.name : "", email: typeof body.email === "string" ? body.email : "", admin: Boolean(body.admin) });
+    } catch (error) {
+      throw new HttpError(400, error.message);
+    }
+    return { ok: true, account: { id: account.id, name: account.name, uid: account.uid ?? null, home: account.home } };
+  }
+  if (request.method === "GET" && parts.length === 1) {
+    return { accounts: accounts.list().map((account) => ({ id: account.id, name: account.name, uid: account.uid ?? null, home: account.home, admin: account.admin })) };
+  }
+  if (request.method === "DELETE" && parts.length === 2) {
+    if (!USER_ID.test(parts[1])) throw new HttpError(400, "Bad user id");
+    const account = accounts.get(parts[1]);
+    if (!account) return { ok: true, removed: false };
+    if (account.admin) throw new HttpError(400, "The admin's account can't be removed");
+    await closeAccountWork(account);
+    return { ok: true, removed: accounts.remove(parts[1]) };
+  }
+  throw new HttpError(404, "Not found");
+}
+
 async function route(request, response, url) {
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts[0] === "update") {
@@ -1155,36 +1328,45 @@ async function route(request, response, url) {
   }
   if (request.method === "POST" && parts.length === 1 && parts[0] === "reset") return resetHome();
   if (request.method === "GET" && parts.length === 1 && parts[0] === "versions") return versions();
+  if (parts[0] === "accounts") return accountsRoute(request, parts);
+  // The skills library, for everyone's bots; the API writes it.
+  if (parts[0] === "skills") {
+    if (request.method === "GET" && parts.length === 1) return listSkillFiles();
+    if (request.method === "PUT" && parts.length === 2) return writeSkillFile(parts[1], (await readJson(request)).content);
+    if (request.method === "DELETE" && parts.length === 2) return deleteSkillFile(parts[1]);
+    throw new HttpError(404, "Not found");
+  }
   // Reads of a bot's files still work while updating; anything that runs on the computer waits.
   if (parts[0] !== "files" && !(parts[0] === "agents" && request.method === "GET" && parts.length === 1)) refuseWhileUpdating();
-  if (parts[0] === "terminals") return terminalRoute(request, response, parts);
-  if (parts[0] === "desktop") return desktopRoute(request, response, parts);
-  if (parts[0] === "agents") return agentRoute(request, response, parts);
+  const account = accountFor(request);
+  if (parts[0] === "terminals") return terminalRoute(request, response, parts, account);
+  if (parts[0] === "desktop") return desktopRoute(request, response, parts, account);
+  if (parts[0] === "agents") return agentRoute(request, response, parts, account);
   if (request.method === "GET" && parts.length === 2 && parts[0] === "claude" && parts[1] === "auth") {
-    return authStatus({ env: agentEnv(), ...asAgent });
+    return authStatus({ env: agentEnv(account), ...asUser(account) });
   }
   if (request.method === "POST" && parts.length === 2 && parts[0] === "claude" && parts[1] === "check") {
-    return checkClaude({ cwd: AGENT_HOME, env: agentEnv(), ...asAgent });
+    return checkClaude({ cwd: account.home, env: agentEnv(account), ...asUser(account) });
   }
-  if (request.method === "GET" && parts.length === 2 && parts[0] === "engines" && parts[1] === "auth") return enginesAuth();
+  if (request.method === "GET" && parts.length === 2 && parts[0] === "engines" && parts[1] === "auth") return enginesAuth(account);
 
   // A bot's home: created on first use, deleted with the bot.
   if (parts.length === 2 && parts[0] === "bots") {
     if (!ID.test(parts[1])) throw new HttpError(400, "Bad bot id");
-    if (request.method === "POST") return { ok: true, dir: botDir(parts[1]) };
+    if (request.method === "POST") return { ok: true, dir: botDir(account, parts[1]) };
     if (request.method === "DELETE") {
       for (const [id, agent] of agents) {
-        if (id === parts[1] || id.startsWith(`${parts[1]}--`)) {
+        if (agent.user === account.id && (id === parts[1] || id.startsWith(`${parts[1]}--`))) {
           agents.delete(id);
           await agent.close({ keepSession: false });
         }
       }
-      fs.rmSync(path.join(BOTS_DIR, parts[1]), { recursive: true, force: true });
+      fs.rmSync(path.join(account.bots, parts[1]), { recursive: true, force: true });
       return { ok: true };
     }
   }
 
-  // A command or a file anywhere in the agent's home.
+  // A command or a file anywhere in the person's home.
   if (request.method === "POST" && parts.length === 1 && parts[0] === "exec") {
     const body = await readJson(request);
     if (typeof body.command !== "string" || !body.command.trim()) {
@@ -1194,18 +1376,18 @@ async function route(request, response, url) {
       Math.max(Number(body.timeoutMs) || DEFAULT_EXEC_TIMEOUT_MS, 1000),
       MAX_EXEC_TIMEOUT_MS,
     );
-    const cwd = boxCwd(body.cwd);
+    const cwd = boxCwd(body.cwd, account.home, forbiddenIn(account));
     if (!fs.existsSync(cwd)) throw new HttpError(404, "No such directory");
-    return runAsAgent(["bash", "-lc", body.command], { cwd, timeoutMs });
+    return runAsUser(account, ["bash", "-lc", body.command], { cwd, timeoutMs });
   }
-  if (request.method === "GET" && parts.length === 2 && parts[0] === "files" && parts[1] === "raw") return sendRawFile(response, url.searchParams.get("path"));
+  if (request.method === "GET" && parts.length === 2 && parts[0] === "files" && parts[1] === "raw") return sendRawFile(response, account, url.searchParams.get("path"));
   if (parts.length === 1 && parts[0] === "files") {
-    if (request.method === "GET") return readFile(url.searchParams.get("path"));
+    if (request.method === "GET") return readFile(account, url.searchParams.get("path"));
     if (request.method === "PUT") {
       const body = await readJson(request);
-      return writeFile(body.path, body.content);
+      return writeFile(account, body.path, body.content);
     }
-    if (request.method === "DELETE") return deleteFile(url.searchParams.get("path"));
+    if (request.method === "DELETE") return deleteFile(account, url.searchParams.get("path"));
   }
   throw new HttpError(404, "Not found");
 }
@@ -1217,8 +1399,9 @@ async function route(request, response, url) {
  * the empty old folders go. A copy where a rename can't cross volumes.
  */
 function adoptVisibleDirs() {
-  for (const [old, dir] of [["bots", BOTS_DIR], ["team", TEAM_DIR], ["skills", SKILLS_DIR]]) {
-    const from = path.join(AGENT_HOME, old);
+  const agent = agentAccount();
+  for (const [old, dir] of [["bots", agent.bots], ["team", agent.team], ["skills", SKILLS_ROOT]]) {
+    const from = path.join(agent.home, old);
     if (from === dir || !fs.existsSync(from)) continue;
     try {
       fs.mkdirSync(dir, { recursive: true });
@@ -1244,13 +1427,13 @@ function adoptVisibleDirs() {
 export function startServer({ port = PORT, host = HOST } = {}) {
   const token = loadToken();
   adoptVisibleDirs();
-  for (const dir of [BOTS_DIR, TEAM_DIR, SKILLS_DIR, CODEX_HOME, GROK_HOME]) {
-    fs.mkdirSync(dir, { recursive: true });
-    own(dir);
-  }
+  fs.mkdirSync(SKILLS_ROOT, { recursive: true, mode: 0o755 });
+  // The agent's folders exist before anyone is named, and every account from the registry exists again.
+  accounts.materialize(agentAccount());
+  accounts.restore();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://box");
-    if (url.pathname === "/health") return send(response, 200, { ok: true, agents: agents.size, desktop: desktopStatus(), updating: Boolean(update && update.finishedAt === null) });
+    if (url.pathname === "/health") return send(response, 200, { ok: true, agents: agents.size, desktops: desktops.size, updating: Boolean(update && update.finishedAt === null) });
     if (!authorized(request, token)) return send(response, 401, { error: "Unauthorized" });
     try {
       const result = await route(request, response, url);
@@ -1258,14 +1441,14 @@ export function startServer({ port = PORT, host = HOST } = {}) {
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500;
       if (status === 500) console.error("[box]", error);
-      if (!response.headersSent) send(response, status, { error: error.message });
+      if (!response.headersSent) send(response, status, { error: error.message, ...(error.code ? { code: error.code } : {}) });
       else response.end();
     }
   });
   server.listen(port, host, () => console.info(`[box] listening on ${host}:${port}`));
   const shutdown = async () => {
     server.close();
-    stopDesktop();
+    stopAllDesktops();
     systemBus?.kill("SIGTERM");
     for (const terminal of terminals.keys()) closeTerminal(terminal);
     await Promise.allSettled([...agents.values()].map((agent) => agent.close({ keepSession: true })));

@@ -74,7 +74,7 @@ export function botsRoutes() {
     if (!bot) return c.json({ error: "No such bot" }, 404);
     await interrupt(bot.threadId);
     deleteBot(bot.id);
-    const box = boxConfig();
+    const box = boxConfig(userId(c));
     if (box && c.req.query("keepFiles") !== "1") await deleteBotHome(box, bot.id).catch(() => undefined);
     return c.body(null, 204);
   });

@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 /**
- * The computer: the shared box every bot works on, opened on its desktop
- * (a GNOME session over VNC). Hiding the panel leaves it running.
+ * The computer: the shared box every bot works on, opened on your own
+ * desktop there (a GNOME session over VNC, in your account). Hiding the
+ * panel leaves it running.
  */
 export function ComputerPanel({ onClose }: { onClose: () => void }) {
   const { boxUpdating, boxUpdate } = useStore();

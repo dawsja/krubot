@@ -89,7 +89,7 @@ function RoutineRow({ routine, onEdit, onChange }: { routine: Routine; onEdit: (
 
 /** What the panel shows: the bot's computer, its routines and its profile; a room's members. */
 export function RightPanelContent({ thread, bot, working }: { thread: Thread; bot: Bot | null; working: boolean }) {
-  const { bots, admin } = useStore();
+  const { bots } = useStore();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -139,14 +139,12 @@ export function RightPanelContent({ thread, bot, working }: { thread: Thread; bo
 
   return (
     <>
-      {admin ? (
-        <section>
-          <h2 className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">{bot.name}&apos;s computer</h2>
-          <div className="mt-2">
-            <ScreenPreview bot={bot} working={working} />
-          </div>
-        </section>
-      ) : null}
+      <section>
+        <h2 className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">{bot.name}&apos;s computer</h2>
+        <div className="mt-2">
+          <ScreenPreview bot={bot} working={working} />
+        </div>
+      </section>
 
       <section>
         <div className="flex items-center justify-between">

@@ -1,9 +1,11 @@
 # syntax=docker/dockerfile:1
 
 # The Kru Bot box: the computer every bot works on, and a small Linux
-# desktop for the person. The full (not slim) Node image brings git, Python 3
-# and a C toolchain; Bun, ripgrep and a browser are added. Extend this file
-# if your bots need more tooling.
+# desktop for each person. The full (not slim) Node image brings git,
+# Python 3 and a C toolchain; Bun, ripgrep and a browser are added. Extend
+# this file if your bots need more tooling. The `agent` user made here is
+# the admin's; everyone else's user is made at run time by server.mjs
+# (accounts.mjs), with a home under /home.
 FROM oven/bun:1.4.2 AS bun
 
 FROM node:24-bookworm
@@ -15,19 +17,20 @@ RUN apt-get update \
  && mkdir -p /home/agent/.bots /home/agent/.cache /home/agent/.claude /home/agent/.codex /home/agent/.grok /state \
  && chown agent:agent /home/agent/.bots /home/agent/.cache /home/agent/.claude /home/agent/.codex /home/agent/.grok
 
-# Claude Code, as published and unmodified. Every bot runs on it; the person
-# signs in to it once from the box desktop (or Settings → Claude) and the
-# login stays in /home/agent/.claude (a volume). Kru Bot never sees it.
+# Claude Code, as published and unmodified. Every bot runs on it; each
+# person signs in to it once from a terminal on the box, in their own
+# account, and the login stays in their ~/.claude (the admin's is a
+# volume). Kru Bot never sees it.
 RUN mkdir -p /opt/claude && cd /opt/claude \
  && bun add --trust @anthropic-ai/claude-code \
  && ln -sf /opt/claude/node_modules/.bin/claude /usr/local/bin/claude \
  && rm -rf /root/.bun/install/cache
 
 # OpenAI Codex and xAI's Grok Build, as published: the other two CLIs a bot
-# can run on (Settings → AI). Each signs in the same way, once, from a
-# terminal on the box (`codex login --device-auth`, `grok login
-# --device-auth`), and keeps it in ~/.codex or ~/.grok on the home volume;
-# or the bots use an API key that stays in Kru Bot's API.
+# can run on (Settings → AI). Each person signs in the same way, once, from
+# a terminal on the box (`codex login --device-auth`, `grok login
+# --device-auth`), and keeps it in their own ~/.codex or ~/.grok; or their
+# bots use an API key of theirs that stays in Kru Bot's API.
 RUN mkdir -p /opt/codex /opt/grok \
  && cd /opt/codex && bun add --trust @openai/codex \
  && ln -sf /opt/codex/node_modules/.bin/codex /usr/local/bin/codex \
@@ -97,8 +100,14 @@ RUN set -eux; \
       fi; \
     done
 
+# The skills library mirror: one folder, root's, linked as ~/.skills in
+# every home. The API fills it at start and on every change.
+RUN mkdir -p /srv/kru/skills && chmod 755 /srv/kru/skills
+
 ENV PORT=8787 \
     AGENT_HOME=/home/agent \
+    HOMES_DIR=/home \
+    SKILLS_DIR=/srv/kru/skills \
     BOTS_DIR=/home/agent/.bots \
     CACHE_DIR=/home/agent/.cache \
     CLAUDE_CONFIG_DIR=/home/agent/.claude \
@@ -115,7 +124,7 @@ ENV PORT=8787 \
 WORKDIR /box
 COPY package.json bun.lock* ./
 RUN bun install --production && rm -rf /root/.bun/install/cache
-COPY server.mjs claude.mjs agents.mjs bridge.mjs rpc.mjs codex.mjs grok.mjs kru-mcp.mjs desktop.sh update.sh ./
+COPY server.mjs accounts.mjs claude.mjs agents.mjs bridge.mjs rpc.mjs codex.mjs grok.mjs kru-mcp.mjs desktop.sh update.sh ./
 RUN chmod 755 desktop.sh update.sh
 # The session gnome-session runs: Flashback without the daemons that need
 # logind or hardware (see kru.session).
@@ -124,14 +133,17 @@ COPY kru.session /usr/share/gnome-session/sessions/kru.session
 COPY wallpaper.png /usr/share/backgrounds/kru.png
 
 # The box is not a throwaway: /home/agent as a whole is a volume, so what the
-# bots install for themselves (global packages, tools, dotfiles, browser
-# profiles) is still there after a restart or a new image. Inside it:
-# /home/agent/.bots holds every bot's home: MEMORY.md, notes, scripts, clones.
-# /home/agent/.team and /home/agent/.skills are the team space and the skills
+# admin's bots install for themselves (global packages, tools, dotfiles,
+# browser profiles) is still there after a restart or a new image. Inside it:
+# /home/agent/.bots holds every one of their bots' homes: MEMORY.md, notes, scripts, clones.
+# /home/agent/.team is the team space; /home/agent/.skills links to the skills
 # library; hidden like the bots' homes so the home looks like a person's.
 # /home/agent/.cache holds package caches (bun, npm, pnpm, yarn, pip, uv).
 # /home/agent/.claude holds the Claude Code sign-in; .codex and .grok hold
 # Codex's and Grok's.
+# Everyone else's home is /home/<name> with the same layout inside it;
+# docker-compose.yml mounts a volume at /home for them. /state keeps the
+# API token and the register of accounts.
 VOLUME ["/state", "/home/agent", "/home/agent/.bots", "/home/agent/.cache", "/home/agent/.claude"]
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

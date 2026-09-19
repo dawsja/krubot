@@ -203,17 +203,25 @@ what is here. The README says what Kru Bot is; this says how it is made.
   computer updates or resets (`src/updater.ts`), nothing new starts and
   pending messages wait. The dispatcher also chases stalled handoffs
   (`src/nudges.ts`) about once a minute.
-- **Engines are one choice for the team.** `settings.engine` picks the CLI
-  and `settings.engines[engine]` its access (`plan` or `api`) and model;
-  `src/engines.ts` turns that into what the box gets. A new engine is a
-  session class in the box with the same surface (`ensure`, `turnWith`,
-  `answerTool`, `close`), its permission questions sent through
-  `askPermission`, and an entry in `ENGINES` in both the box and shared.
-- **AI provider keys are secrets too.** `src/data/providers.ts` keeps the
-  Anthropic-compatible and OpenAI-compatible endpoints, the key encrypted
-  and write-only. The box gets the LLM proxy (`/api/llm/:kind/*` in
-  `src/routes/llm.ts`) and the provider's proxy token; only the proxy
-  decrypts the key, and `allSecretValues()` includes it for redaction.
+- **The AI is each person's own** (`src/data/ai.ts`, Settings → AI for
+  everyone). `getAi(userId).engine` picks the CLI and `engines[engine]`
+  its access (`plan` or `api`) and model, plus the effort;
+  `src/engines.ts` turns that and the owner's providers into what the box
+  gets. A plan is the CLI signed in inside the person's own account on the
+  box; an API key is one of their own providers. Nobody's bots run on
+  anyone else's plan or key, and there is no fallback to the admin's. Team
+  settings (`kru_settings`) keep only onboarding, concurrency and the time
+  zone. A new engine is a session class in the box with the same surface
+  (`ensure`, `turnWith`, `answerTool`, `close`), its permission questions
+  sent through `askPermission`, and an entry in `ENGINES` in both the box
+  and shared.
+- **AI provider keys are secrets too, and each person's own.**
+  `src/data/providers.ts` keeps one Anthropic-compatible and one
+  OpenAI-compatible endpoint per person, the key encrypted and write-only.
+  The box gets the LLM proxy (`/api/llm/:kind/*` in `src/routes/llm.ts`)
+  and the provider's proxy token; the token names whose row it is
+  (`providerByToken`), only the proxy decrypts the key, and
+  `allSecretValues()` includes every key for redaction.
 - **Secrets never leave the API.** `src/data/secrets.ts` stores them
   encrypted, per person, and only `readSecret`/`injectSecrets` decrypt, at
   the moment of use: the MCP proxy in `src/routes/mcp.ts`, which fills a
@@ -271,19 +279,33 @@ what is here. The README says what Kru Bot is; this says how it is made.
   person or needs them, and only when `bot.notify` is on. `sendPush` also
   emits the same notice as a `notify` live event for the Android app.
 - **Roles.** `src/access.ts` is how a route knows who is asking:
-  `requireAdmin` guards the admin's areas (mounted in `app.ts`: box,
-  status, onboarding, providers, users, oidc, and every write to settings
-  and skills), `ownBot` and
+  `requireAdmin` guards the admin's areas (mounted in `app.ts`: the
+  computer's Update and Reset, onboarding, users, oidc, and every write to
+  settings and skills), `ownBot` and
   `ownThread` answer null for anything that isn't the signed-in person's,
   and a route answers 404 then, never 403. `listBots`, `listThreads`,
   `getChief`, `createBot`, `createRoom`, `searchMessages` and the push
   functions take the user; the responder and the bot tools use the
-  conversation's owner. Connected apps, the Composio key, MCP servers and
-  secrets are everyone's own and answer only for the signed-in person;
-  nothing is shared between people. Reads everyone needs (the skills
-  index, a reduced settings view) stay open and are narrowed inside their
-  routes. A live event about a
-  conversation or a person reaches only its owner (`routes/events.ts`).
+  conversation's owner. Connected apps, the Composio key, MCP servers,
+  secrets, the AI and its providers, and the computer (terminals, the
+  desktop, a bot's files, the sign-in status) are everyone's own and
+  answer only for the signed-in person; nothing is shared between people.
+  Reads everyone needs (the skills index, a reduced settings view) stay
+  open and are narrowed inside their routes. A live event about a
+  conversation or a person reaches only its owner (`routes/events.ts`);
+  `ai` is such a topic.
+- **Every person has an account on the box.** `boxConfig(userId)` in
+  `src/box.ts` makes the client for one person, and every request about a
+  home carries them in `X-Kru-User`. The box answers `no_account` for
+  someone it hasn't met, the client makes the account (`POST /accounts`:
+  the admin is `agent`, anyone else a new Linux user with a home of their
+  own) and tries again, so nothing is set up ahead of time. The responder
+  uses the conversation's owner, the bot tools the bot's owner, the box
+  routes the signed-in person; `boxHome(userId)` is the home's path once
+  it is known (for `send_file`'s absolute paths). Deleting a person
+  (`routes/users.ts`) removes their account, home and all
+  (`removeBoxAccount`). The skills mirror is not anyone's: `syncSkills`
+  writes it through `/skills` at start and on every change.
 - **The OIDC provider** is `data/oidc.ts` (secret encrypted, write-only)
   and Better Auth's `genericOAuth` plugin in `auth.ts`, built from it with
   discovery; a change calls `invalidateAuth()` so the next request gets a
@@ -302,25 +324,46 @@ what is here. The README says what Kru Bot is; this says how it is made.
 
 ## Box
 
-- The box is not a throwaway. `/home/agent` is a volume; the bots' homes,
-  package caches and the Claude sign-in are volumes inside it. Never put
-  state anywhere else.
-- Everything a bot runs happens as the `agent` user with `agentEnv()`.
-  Credentials are stripped from the environment before a session starts.
-  The CLIs' sign-ins (`.claude`, `.codex`, `.grok`) are never readable
-  through the files API and survive Reset.
+- The box is not a throwaway. `/home/agent` (the admin's home) is a
+  volume; their bots' homes, package caches and Claude sign-in are volumes
+  inside it. `/home` is a volume for everyone else's homes, and `/state`
+  keeps the token and the register of accounts. Never put state anywhere
+  else.
+- **One Linux account per person** (`accounts.mjs`). The admin is the
+  `agent` user the box always had; everyone else gets `kru-<name>` (uid
+  from 2001) and `/home/<name>`, mode 0700, made with `useradd` on first
+  use and made again at start from `/state/accounts.json`, since
+  `/etc/passwd` doesn't survive a container recreate but the homes do.
+  Every route about a home takes the person from `X-Kru-User`
+  (`accountFor`) and runs as them: `agentEnv(account)`, `asUser(account)`,
+  `botDir(account, id)`, a terminal in their home, a desktop on their own
+  display and VNC port (`desktopSlot`), and sessions, terminals and
+  desktop connections answer 404 for anyone else's. Separation is Unix
+  permissions inside one container: real, but not a hard security
+  boundary. Without root (a dev checkout) every account shares this
+  process's user and only the homes differ.
+- Everything a bot runs happens as its owner's user with
+  `agentEnv(account)`. Credentials are stripped from the environment
+  before a session starts. The CLIs' sign-ins (`.claude`, `.codex`,
+  `.grok`, each person's own) are never readable through the files API
+  and survive Reset.
 - Anything that uses the computer answers 503 while `update.sh` runs;
-  reads of a bot's files still work. `POST /reset` wipes the home except
-  `.bots`, `.team`, `.skills` and `.claude`.
-- `~/.team` holds each person's team space, `.team/<user id>` (its
-  `MEMORY.md` loads into every turn of that person's bots, and nobody
-  else's; the admin's bots still read the old `.team/MEMORY.md` until they
-  write their own); `~/.skills` is the library mirror; `~/.bots/<id>` is each bot's
-  home. All three are hidden so the home looks like a person's, and all
-  belong to the agent user. `bots`, `team` and `skills` from an older box
-  are moved over at start.
+  reads of a bot's files still work. `POST /reset` wipes the admin's home
+  only, except `.bots`, `.team`, `.skills` and the sign-ins; other
+  people's homes stay as they are. `DELETE /accounts/:id` closes a
+  person's sessions and removes their user and home.
+- In every home, `~/.team` holds the person's team space, `.team/<user
+  id>` (its `MEMORY.md` loads into every turn of that person's bots, and
+  nobody else's; the admin's bots still read the old `.team/MEMORY.md`
+  until they write their own); `~/.skills` is a link to the one library
+  mirror (`/srv/kru/skills`, root's, written by the API through
+  `/skills`); `~/.bots/<id>` is each bot's home. All three are hidden so
+  the home looks like a person's. `bots`, `team` and `skills` from an
+  older box are moved over at start.
 - New endpoints: add to `route()` in `server.mjs`, keep the bearer-token
-  check, keep paths inside the agent's home (`insideHome`, `boxCwd`).
+  check, take the account from the request, keep paths inside that
+  person's home (`insideHome`, `boxCwd` with `account.home` and
+  `forbiddenIn(account)`).
 - Node and the desktop come from the image; Bun and Claude Code are
   patched in place by `update.sh`. Keep the script step-per-tool, each
   step reporting and never stopping the next.
@@ -345,11 +388,18 @@ changed and why, written for the person reading the log.
 - One local account per install, the admin; the setup token gates its
   registration. Everyone else comes through the OIDC provider the admin
   set up and is a user.
-- All bots, everyone's, share one computer. Separate bots (and separate
-  people) are not a security boundary there; the container and the
-  unprivileged user are. Rows in the database are: a bot, a conversation,
-  a push subscription, a connected app, a Composio key, an MCP server and
-  a secret belong to a user, and a route never returns another person's.
+- All bots, everyone's, share one computer, and every person has their
+  own Linux account on it: their own home, their bots' files, their CLI
+  sign-ins, their terminals and their desktop. Separate bots are not a
+  security boundary there; separate people are Unix permissions inside
+  one container, which keeps their work apart but is not a hard boundary
+  either. The container and the unprivileged users are. Rows in the
+  database are: a bot, a conversation, a push subscription, a connected
+  app, a Composio key, an MCP server, a secret, an AI setting and an API
+  provider belong to a user, and a route never returns another person's.
+- Everyone's bots run on their own plan or their own API key. Nothing
+  about the AI is shared between people, and nobody falls back to the
+  admin's.
 - The web app never talks to the box; the API does, with a bearer token,
   over the Compose network.
 - The Docker socket on the API exists only for Settings → Computer →

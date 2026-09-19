@@ -1,6 +1,6 @@
 "use client";
 
-import { CLAUDE_CODE_MODELS, ENGINE_LABELS, ENGINES, MODEL_LABELS, PROVIDER_LABELS, type BoxStatus, type EffortLevel, type Engine, type EngineAccess, type EngineSettings, type ProviderKind, type ProviderMeta, type Settings } from "@krubot/shared";
+import { CLAUDE_CODE_MODELS, ENGINE_LABELS, ENGINES, MODEL_LABELS, PROVIDER_LABELS, type AiSettings, type BoxStatus, type EffortLevel, type Engine, type EngineAccess, type EngineSettings, type ProviderKind, type ProviderMeta } from "@krubot/shared";
 import { Check, CircleDashed, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { EffortSlider } from "@/components/effort-slider";
@@ -18,8 +18,9 @@ const MODEL_ITEMS = CLAUDE_CODE_MODELS.map((model) => ({ value: model, label: MO
 export type Readiness = { state: "ready" | "waiting" | "problem"; text: string };
 
 /**
- * Whether the bots can work on this engine and access right now: signed in
- * on the computer for a plan, a working key saved for an API.
+ * Whether your bots can work on this engine and access right now: signed
+ * in inside your own account on the computer for a plan, a working key of
+ * yours saved for an API.
  */
 export function readiness(engine: Engine, access: EngineAccess, status: BoxStatus | null, providers: Record<ProviderKind, ProviderMeta | null> | null): Readiness {
   const info = ENGINE_LABELS[engine];
@@ -33,15 +34,15 @@ export function readiness(engine: Engine, access: EngineAccess, status: BoxStatu
   if (!status) return { state: "waiting", text: "Checking the computer…" };
   if (!status.configured || !status.reachable) return { state: "problem", text: "The computer isn't reachable, so the sign-in can't be checked." };
   if (engine === "claude") {
-    if (status.claude.status === "ok") return { state: "ready", text: `Claude Code is signed in${status.claude.email ? ` as ${status.claude.email}` : ""}.` };
-    if (status.claude.status === "missing") return { state: "problem", text: "The computer has no claude CLI. Update the computer." };
-    return { state: "waiting", text: `Not signed in yet. Open the computer and run ${info.signIn} in a terminal.` };
+    if (status.claude.status === "ok") return { state: "ready", text: `Claude Code is signed in${status.claude.email ? ` as ${status.claude.email}` : ""} in your account on the computer.` };
+    if (status.claude.status === "missing") return { state: "problem", text: "The computer has no claude CLI. The admin can update the computer." };
+    return { state: "waiting", text: `Not signed in yet. Open the computer and run ${info.signIn} in a terminal; the sign-in is yours alone.` };
   }
   const state = status.engines?.[engine];
   if (!state) return { state: "waiting", text: "Checking the computer…" };
-  if (!state.installed) return { state: "problem", text: `The computer has no ${engine} CLI. Update the computer.` };
-  if (state.loggedIn) return { state: "ready", text: `${info.name} is signed in.` };
-  return { state: "waiting", text: `Not signed in yet. Open the computer and run ${info.signIn} in a terminal.` };
+  if (!state.installed) return { state: "problem", text: `The computer has no ${engine} CLI. The admin can update the computer.` };
+  if (state.loggedIn) return { state: "ready", text: `${info.name} is signed in in your account on the computer.` };
+  return { state: "waiting", text: `Not signed in yet. Open the computer and run ${info.signIn} in a terminal; the sign-in is yours alone.` };
 }
 
 export function ReadinessLine({ value }: { value: Readiness }) {
@@ -54,14 +55,14 @@ export function ReadinessLine({ value }: { value: Readiness }) {
   );
 }
 
-/** Settings → AI: which CLI the team runs on, how it reaches its model, and which model. */
-export function EngineCard({ settings, status, onChange }: { settings: Settings; status: BoxStatus | null; onChange: (next: Settings) => void }) {
+/** Settings → AI, yours: which CLI your bots run on, how it reaches its model, and which model. */
+export function EngineCard({ ai, status, onChange }: { ai: AiSettings; status: BoxStatus | null; onChange: (next: AiSettings) => void }) {
   const { providers } = useProviders();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const engine = settings.engine;
+  const engine = ai.engine;
   const info = ENGINE_LABELS[engine];
-  const config = settings.engines[engine];
+  const config = ai.engines[engine];
   const [draftModel, setDraftModel] = useState<{ engine: Engine; value: string } | null>(null);
   const model = draftModel?.engine === engine ? draftModel.value : config.model;
 
@@ -69,8 +70,8 @@ export function EngineCard({ settings, status, onChange }: { settings: Settings;
     setSaving(true);
     setError(null);
     try {
-      const data = await patch<{ settings: Settings }>("/api/settings", next);
-      onChange(data.settings);
+      const data = await patch<{ ai: AiSettings }>("/api/ai", next);
+      onChange(data.ai);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not save.");
     } finally {
@@ -89,7 +90,7 @@ export function EngineCard({ settings, status, onChange }: { settings: Settings;
     <Card>
       <CardHeader>
         <CardTitle>Engine</CardTitle>
-        <CardDescription>The coding agent every bot runs on, on its computer. Switch here and the whole team moves on its next reply; each bot keeps its files and memory, and starts a fresh conversation with the new engine.</CardDescription>
+        <CardDescription>The coding agent your bots run on, inside your own account on the computer. Your plan is your own sign-in there and an API key is your own; nobody else&apos;s bots use them. Switch here and your bots move on their next reply; each keeps its files and memory, and starts a fresh conversation with the new engine.</CardDescription>
       </CardHeader>
       <CardContent>
         <FieldGroup>
@@ -146,7 +147,7 @@ export function EngineCard({ settings, status, onChange }: { settings: Settings;
           </Field>
           <Field data-disabled={saving || undefined}>
             <FieldTitle>Effort</FieldTitle>
-            <EffortSlider value={settings.effort} disabled={saving} onChange={(effort) => void save({ effort })} />
+            <EffortSlider value={ai.effort} disabled={saving} onChange={(effort) => void save({ effort })} />
             {error ? <FieldError>{error}</FieldError> : null}
           </Field>
         </FieldGroup>

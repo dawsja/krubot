@@ -521,17 +521,29 @@ export type Onboarding = {
   templates: string[];
 };
 
+/** What the whole team shares: the setup, how many bots work at once, and the time zone. */
 export type Settings = {
   onboarding: Onboarding;
   concurrency: number;
   timezone: string;
-  /** The CLI every bot runs on. One for the whole team. */
+};
+
+/**
+ * What one person's bots run on (Settings → AI, everyone's own): the CLI,
+ * for each CLI their plan or their API key with the model, and the effort.
+ * A plan is the CLI signed in inside their own account on the computer;
+ * an API key is one of their own providers. Nobody runs on anyone else's.
+ */
+export type AiSettings = {
+  /** The CLI this person's bots run on. */
   engine: Engine;
-  /** For each engine: your plan or an API key, and the model. */
+  /** For each engine: their plan or an API key, and the model. */
   engines: Record<Engine, EngineSettings>;
   /** How hard the CLI thinks per reply; null is the CLI's default. */
   effort: EffortLevel | null;
 };
+
+export const DEFAULT_AI: AiSettings = { engine: "claude", engines: DEFAULT_ENGINES, effort: null };
 
 /** Whether Codex or Grok is installed on the box and signed in to a plan. */
 export type EngineStatus = { installed: boolean; loggedIn: boolean; detail: string };
@@ -542,15 +554,22 @@ export type ClaudeStatus = {
   email?: string | null;
 };
 
+/**
+ * The computer as one person sees it: whether it is up, their own sign-ins
+ * on it (each person has their own account there), and, for the admin,
+ * every live session and what is installed.
+ */
 export type BoxStatus = {
   configured: boolean;
   reachable: boolean;
   /** True while Settings → Computer → Update is running: nothing starts on the box. */
   updating: boolean;
+  /** Claude Code's sign-in in this person's account. */
   claude: ClaudeStatus;
-  /** Codex and Grok on the box; null when the box didn't answer. */
+  /** Codex and Grok on the box, signed in for this person or not; null when the box didn't answer. */
   engines: { codex: EngineStatus; grok: EngineStatus } | null;
   composio: { configured: boolean; connected: number };
+  /** Live sessions: everyone's for the admin, only their own for anyone else. */
   agents: { id: string; running: boolean; busy: boolean }[];
   /** What runs on the box, when it answered. */
   versions: { node: string | null; bun: string | null; claude: string | null; codex?: string | null; grok?: string | null } | null;
@@ -602,6 +621,8 @@ export type LiveEvent =
   | { topic: "box" }
   /** Your own profile (name, picture) changed. */
   | { topic: "me"; userId: string }
+  /** Your AI settings or API keys changed. */
+  | { topic: "ai"; userId: string }
   /**
    * A bot finished a job for you or needs you: what the API just sent as a
    * push notification, for a client without Web Push (the Android app)

@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "node server.mjs",
     "test": "node --test test/*.test.mjs",
-    "lint": "node --check server.mjs && node --check agents.mjs && node --check claude.mjs && node --check kru-mcp.mjs && node --check bridge.mjs && node --check rpc.mjs && node --check codex.mjs && node --check grok.mjs",
+    "lint": "node --check server.mjs && node --check accounts.mjs && node --check agents.mjs && node --check claude.mjs && node --check kru-mcp.mjs && node --check bridge.mjs && node --check rpc.mjs && node --check codex.mjs && node --check grok.mjs",
     "typecheck": "node --check server.mjs"
   },
   "dependencies": {

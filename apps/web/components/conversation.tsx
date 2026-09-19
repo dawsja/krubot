@@ -212,7 +212,7 @@ function JumpToMessage({ id, ready }: { id: string | null; ready: boolean }) {
 }
 
 export function Conversation({ threadId }: { threadId: string }) {
-  const { bots, threads, approvals, activity, refresh, boxUpdating, admin } = useStore();
+  const { bots, threads, approvals, activity, refresh, boxUpdating } = useStore();
   const [info, setInfo] = useState<ThreadInfo | null>(null);
   const [missing, setMissing] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -439,7 +439,7 @@ export function Conversation({ threadId }: { threadId: string }) {
   const busy = Object.keys(working).length > 0;
   const members = isRoom && info ? info.thread.members.map((id) => bots.find((b) => b.id === id)).filter((b): b is Bot => Boolean(b)) : [];
   const row = threads.find((t) => t.id === threadId);
-  const actions = row ? threadActions({ thread: row, bot: bot ?? undefined, admin, onOpen: openShellDialog, onAsk: setAsk, refresh }) : [];
+  const actions = row ? threadActions({ thread: row, bot: bot ?? undefined, onOpen: openShellDialog, onAsk: setAsk, refresh }) : [];
 
   return (
     <div className="flex min-h-0 flex-1">

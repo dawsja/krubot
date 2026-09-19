@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { admin, userId } from "../access.ts";
 import type { Env } from "../app.ts";
 import { availableToolkits } from "../composio.ts";
+import { getAi, updateAi } from "../data/ai.ts";
 import { getSettings, updateSettings } from "../data/settings.ts";
 import { boxStatus, forgetClaudeCheck } from "../status.ts";
 import { addFromTemplate, templateById } from "../templates.ts";
@@ -12,20 +13,31 @@ export function settingsRoutes() {
 
   app.get("/settings", (c) => {
     const settings = getSettings();
-    // A user never sees onboarding (it is the admin's) and needs only the time zone and the engine's name.
+    // A user never sees onboarding (it is the admin's) and needs only the time zone.
     return c.json({ settings: admin(c) ? settings : { ...settings, onboarding: { done: true, apps: [], templates: [] } } });
   });
 
   app.patch("/settings", async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { timezone?: string; concurrency?: number; engine?: string; engines?: Record<string, unknown>; effort?: string | null };
+    const body = (await c.req.json().catch(() => ({}))) as { timezone?: string; concurrency?: number };
     const patch: Parameters<typeof updateSettings>[0] = {};
+    if (typeof body.timezone === "string" && body.timezone.length <= 64) patch.timezone = body.timezone;
+    if (typeof body.concurrency === "number") patch.concurrency = Math.min(Math.max(Math.floor(body.concurrency), 1), 10);
+    return c.json({ settings: updateSettings(patch) });
+  });
+
+  // Settings → AI, each person's own: their engine, its access and model, and the effort.
+  app.get("/ai", (c) => c.json({ ai: getAi(userId(c)) }));
+
+  app.patch("/ai", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { engine?: string; engines?: Record<string, unknown>; effort?: string | null };
+    const patch: Parameters<typeof updateAi>[1] = {};
     if (body.engine !== undefined) {
       if (!(ENGINES as readonly string[]).includes(String(body.engine))) return c.json({ error: "The engine is claude, codex or grok" }, 400);
       patch.engine = body.engine as Engine;
     }
     if (body.engines !== undefined) {
       if (!body.engines || typeof body.engines !== "object") return c.json({ error: "Bad engines" }, 400);
-      const current = getSettings().engines;
+      const current = getAi(userId(c)).engines;
       const engines: Partial<Record<Engine, EngineSettings>> = {};
       for (const [name, value] of Object.entries(body.engines)) {
         if (!(ENGINES as readonly string[]).includes(name)) return c.json({ error: `No engine called ${name}` }, 400);
@@ -42,21 +54,20 @@ export function settingsRoutes() {
         }
         engines[name as Engine] = next;
       }
-      patch.engines = engines as Record<Engine, EngineSettings>;
+      patch.engines = engines;
     }
     if (body.effort === null) patch.effort = null;
     else if (typeof body.effort === "string") {
       if (!(EFFORT_LEVELS as readonly string[]).includes(body.effort)) return c.json({ error: "Effort is low, medium or high" }, 400);
       patch.effort = body.effort as EffortLevel;
     }
-    if (typeof body.timezone === "string" && body.timezone.length <= 64) patch.timezone = body.timezone;
-    if (typeof body.concurrency === "number") patch.concurrency = Math.min(Math.max(Math.floor(body.concurrency), 1), 10);
-    return c.json({ settings: updateSettings(patch) });
+    return c.json({ ai: updateAi(userId(c), patch) });
   });
 
+  // The computer as this person sees it: their own sign-ins; the admin also gets every live session.
   app.get("/status", async (c) => {
-    if (c.req.query("fresh") === "1") forgetClaudeCheck();
-    return c.json({ status: await boxStatus(userId(c), c.req.query("fresh") === "1") });
+    if (c.req.query("fresh") === "1") forgetClaudeCheck(userId(c));
+    return c.json({ status: await boxStatus(userId(c), { fresh: c.req.query("fresh") === "1", admin: admin(c) }) });
   });
 
   app.get("/catalog", async (c) => c.json({ apps: await availableToolkits(userId(c)), all: APP_CATALOG }));

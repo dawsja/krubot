@@ -18,14 +18,14 @@ export type Ask = { kind: "clear" | "delete"; thread: ThreadRow };
 
 export type ThreadAction = { id: string; label: string; icon: LucideIcon; run: () => void; destructive?: boolean };
 
-export function threadActions({ thread, bot, admin, onOpen, onAsk, refresh }: { thread: ThreadRow; bot: Bot | undefined; admin: boolean; onOpen: (dialog: NonNullable<ShellDialog>) => void; onAsk: (ask: Ask) => void; refresh: () => Promise<void> }): ThreadAction[][] {
+export function threadActions({ thread, bot, onOpen, onAsk, refresh }: { thread: ThreadRow; bot: Bot | undefined; onOpen: (dialog: NonNullable<ShellDialog>) => void; onAsk: (ask: Ask) => void; refresh: () => Promise<void> }): ThreadAction[][] {
   const groups: ThreadAction[][] = [];
   if (bot) {
     groups.push([
       { id: "edit", label: "Edit profile", icon: Pencil, run: () => onOpen({ kind: "edit-bot", botId: bot.id }) },
       { id: "pin", label: bot.pinned ? "Unpin" : "Pin to the top", icon: bot.pinned ? PinOff : Pin, run: () => void patch(`/api/bots/${bot.id}`, { pinned: !bot.pinned }).then(() => refresh()) },
-      // The computer is one machine every bot shares, so only the admin opens it.
-      ...(admin ? [{ id: "computer", label: "Open its computer", icon: Monitor, run: () => onOpen({ kind: "computer", botId: bot.id }) }] : []),
+      // Its computer is your own account on the shared machine: a terminal in its folder, your desktop.
+      { id: "computer", label: "Open its computer", icon: Monitor, run: () => onOpen({ kind: "computer", botId: bot.id }) },
       {
         id: "duplicate",
         label: "Duplicate",

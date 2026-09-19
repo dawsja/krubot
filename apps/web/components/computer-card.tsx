@@ -18,12 +18,13 @@ import { settingsHref } from "@/lib/settings-sections";
 import { cn } from "@/lib/utils";
 
 /*
- * Settings → Computer: whether the box is up, what's installed on it, and
- * the Update and Reset buttons. Which engine the bots use and its sign-in
- * live in the Engine card. Update pauses the computer, pulls the newest box
- * image from GHCR when the API can reach Docker, patches Debian, Bun and
- * the engines' CLIs in place, and brings the computer back; the phases and
- * the log show here as they happen.
+ * Settings → Computer: whether the box is up, what's installed on it, a
+ * way into your own account there, and, for the admin, the Update and
+ * Reset buttons. Which engine your bots use and its sign-in live in the
+ * Engine card. Update pauses the computer, pulls the newest box image from
+ * GHCR when the API can reach Docker, patches Debian, Bun and the engines'
+ * CLIs in place, and brings the computer back; the phases and the log show
+ * here as they happen.
  */
 
 const ORDER = ["pausing", "pulling", "restarting", "resetting", "patching", "resuming", "done"] as const;
@@ -40,7 +41,7 @@ function progressOf(update: BoxUpdate | null): number {
   return at < 0 ? 0 : Math.round(((at + 1) / ORDER.length) * 100);
 }
 
-export function ComputerCard({ status, onCheck }: { status: BoxStatus | null; onCheck: () => Promise<void> | void }) {
+export function ComputerCard({ status, admin, onCheck }: { status: BoxStatus | null; admin: boolean; onCheck: () => Promise<void> | void }) {
   const { boxUpdate, boxUpdating } = useStore();
   const [docker, setDocker] = useState<{ available: boolean; reason: string | null } | null>(null);
   const [confirming, setConfirming] = useState<"update" | "reset" | null>(null);
@@ -48,12 +49,13 @@ export function ComputerCard({ status, onCheck }: { status: BoxStatus | null; on
   const logRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
+    if (!admin) return;
     void Promise.resolve().then(() =>
       api<{ docker: { available: boolean; reason: string | null } }>("/api/box/update")
         .then((d) => setDocker(d.docker))
         .catch(() => undefined),
     );
-  }, []);
+  }, [admin]);
   useEffect(() => {
     const node = logRef.current;
     if (node) node.scrollTop = node.scrollHeight;
@@ -88,29 +90,31 @@ export function ComputerCard({ status, onCheck }: { status: BoxStatus | null; on
         ? { text: "Not set up", tone: "problem", detail: "No computer is configured. Set KRU_BOX_URL on the API." }
         : !status.reachable
           ? { text: "Unreachable", tone: "problem", detail: "The computer isn't answering. Is the box container running?" }
-          : { text: "Running", tone: "ok", detail: liveSessions ? (liveSessions === 1 ? "1 bot session is live on it." : `${liveSessions} bot sessions are live on it.`) : "No bot is working on it right now." };
+          : { text: "Running", tone: "ok", detail: liveSessions ? (liveSessions === 1 ? (admin ? "1 bot session is live on it." : "1 of your bots is live on it.") : admin ? `${liveSessions} bot sessions are live on it.` : `${liveSessions} of your bots are live on it.`) : admin ? "No bot is working on it right now." : "None of your bots is working on it right now." };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Computer</CardTitle>
         <CardDescription>
-          The machine every bot works on, with its own terminal, browser and desktop. Its home folder, the bots&apos; files and the engines&apos; sign-ins last through restarts, updates and resets. Which engine the bots run on, and its sign-in, is under{" "}
+          The machine every bot works on. You have your own account on it, with your own home folder, terminal, browser and desktop; your bots work as you there, and nobody else&apos;s bots can see your files or your sign-ins. Your home, your bots&apos; files and your engines&apos; sign-ins last through restarts and updates. Which engine your bots run on, and its sign-in, is under{" "}
           <Link href={settingsHref("ai")} className="text-brand-ink underline underline-offset-2">
             Settings → AI
           </Link>
           .
         </CardDescription>
-        <CardAction className="flex gap-1.5">
-          <Button variant="ghost" size="sm" disabled={boxUpdating || !status?.reachable} onClick={() => setConfirming("reset")}>
-            <RotateCcw data-icon="inline-start" aria-hidden="true" />
-            Reset
-          </Button>
-          <Button variant="outline" size="sm" disabled={boxUpdating || !status?.reachable} onClick={() => setConfirming("update")}>
-            {boxUpdating ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" aria-hidden="true" />}
-            {boxUpdating ? (boxUpdate?.kind === "reset" ? "Resetting…" : "Updating…") : "Update"}
-          </Button>
-        </CardAction>
+        {admin ? (
+          <CardAction className="flex gap-1.5">
+            <Button variant="ghost" size="sm" disabled={boxUpdating || !status?.reachable} onClick={() => setConfirming("reset")}>
+              <RotateCcw data-icon="inline-start" aria-hidden="true" />
+              Reset
+            </Button>
+            <Button variant="outline" size="sm" disabled={boxUpdating || !status?.reachable} onClick={() => setConfirming("update")}>
+              {boxUpdating ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" aria-hidden="true" />}
+              {boxUpdating ? (boxUpdate?.kind === "reset" ? "Resetting…" : "Updating…") : "Update"}
+            </Button>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -133,7 +137,7 @@ export function ComputerCard({ status, onCheck }: { status: BoxStatus | null; on
           </div>
         ) : null}
 
-        {boxUpdate ? (
+        {boxUpdate && admin ? (
           <div className="flex flex-col gap-2 rounded-xl border bg-muted/40 p-3">
             <Progress value={progressOf(boxUpdate)} aria-label="Update progress" className={cn(boxUpdate.phase === "failed" && "[&_[data-slot=progress-indicator]]:bg-destructive")}>
               <span className="flex w-full items-center gap-2 text-[13px] font-medium">
@@ -167,7 +171,7 @@ export function ComputerCard({ status, onCheck }: { status: BoxStatus | null; on
           <AlertDialogHeader>
             <AlertDialogTitle>Reset the computer?</AlertDialogTitle>
             <AlertDialogDescription>
-              Like a fresh install. <strong>Kept:</strong> every bot&apos;s home with its memory and files, the team&apos;s shared files, the skills, and the sign-ins for Claude Code, Codex and Grok. <strong>Gone:</strong> everything else in the home folder: global packages and tools the bots installed, dotfiles, browser profiles and sessions, caches{docker?.available ? ", and the container itself is rebuilt from its image" : ""}. Running work stops and messages wait until it&apos;s back.
+              Like a fresh install of your own home folder; other people&apos;s homes stay as they are. <strong>Kept:</strong> every one of your bots&apos; homes with its memory and files, your team&apos;s shared files, the skills, and your sign-ins for Claude Code, Codex and Grok. <strong>Gone:</strong> everything else in your home folder: global packages and tools the bots installed, dotfiles, browser profiles and sessions, caches{docker?.available ? ", and the container itself is rebuilt from its image" : ""}. Everyone&apos;s running work stops and messages wait until it&apos;s back.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -184,7 +188,7 @@ export function ComputerCard({ status, onCheck }: { status: BoxStatus | null; on
           <AlertDialogHeader>
             <AlertDialogTitle>Update the computer?</AlertDialogTitle>
             <AlertDialogDescription>
-              The computer pauses: running work stops, the desktop closes, and new messages wait. {docker?.available ? "The newest box image is pulled from GHCR and the box restarts on it, keeping every bot's files." : "Then it's patched in place (Debian, Bun, Claude Code, Codex and Grok)."}
+              The computer pauses for everyone: running work stops, desktops close, and new messages wait. {docker?.available ? "The newest box image is pulled from GHCR and the box restarts on it, keeping everyone's files." : "Then it's patched in place (Debian, Bun, Claude Code, Codex and Grok)."}
               {docker && !docker.available ? ` Image pulls are off: ${docker.reason}` : docker?.available ? " Then Debian, Bun, Claude Code, Codex and Grok are patched." : ""} A few minutes, usually.
             </AlertDialogDescription>
           </AlertDialogHeader>

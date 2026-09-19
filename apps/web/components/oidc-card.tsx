@@ -166,7 +166,7 @@ export function OidcCard() {
         {oidc.enabled ? (
           <Alert>
             <AlertTitle>People from {oidc.name} are users, not admins.</AlertTitle>
-            <AlertDescription>They get their own bots and conversations. They see the apps and MCP servers you mark as shared under Apps, and nothing else from Settings. Only this account changes the AI, the computer, the skills, the secrets, or who can sign in.</AlertDescription>
+            <AlertDescription>They get their own bots and conversations, their own account on the computer with their own sign-ins, and their own AI, apps, MCP servers and secrets; nothing is shared between people. Only this account changes the team settings, updates or resets the computer, edits the skills, or decides who can sign in.</AlertDescription>
           </Alert>
         ) : null}
         <Field orientation="horizontal">

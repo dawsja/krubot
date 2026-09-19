@@ -2,6 +2,7 @@ import { handleOf, mentionsIn, type Bot, type Message, type Thread } from "@krub
 import { boxConfig, ensureBotHome, interruptAgent, writeBoxFile, type BoxConfig } from "./box.ts";
 import { isUpdating } from "./updater.ts";
 import { defaultEffort } from "./config.ts";
+import { getAi } from "./data/ai.ts";
 import { getBot, getChief, listBots } from "./data/bots.ts";
 import { delegationForMessage, finishDelegation } from "./data/delegations.ts";
 import { allSecretValues } from "./data/secrets.ts";
@@ -23,10 +24,10 @@ import { appTools, baseTools, CHIEF_TOOL_NOTES, chiefTools, loadMemory, loadTeam
 /*
  * A bot's turn: the SOUL as the system prompt, the last few dozen lines of
  * the conversation as context, the team's tools in hand, and one reply
- * posted at the end. Runs on the bot's persistent CLI session in the box
- * (Claude Code, Codex or Grok, as Settings → AI says), so the bot
- * remembers the conversation between turns even when its process was
- * closed in between.
+ * posted at the end. Runs on the bot's persistent CLI session in the box,
+ * inside its owner's account there (Claude Code, Codex or Grok, as the
+ * owner's Settings → AI says), so the bot remembers the conversation
+ * between turns even when its process was closed in between.
  */
 
 /** Lines of a conversation a bot reads before answering. */
@@ -34,7 +35,7 @@ const CONTEXT_LINES = 30;
 /** Longest one reply may take: real work happens in the box. */
 const TURN_TIMEOUT_MS = 45 * 60 * 1000;
 
-type Active = { botId: string; threadId: string; controller: AbortController; startedAt: number };
+type Active = { botId: string; threadId: string; userId: string; controller: AbortController; startedAt: number };
 const holder = globalThis as typeof globalThis & { __kruActiveTurns?: Map<string, Active> };
 
 /** Turns in flight, by agent id (bot + thread). */
@@ -55,11 +56,11 @@ export function isBusy(botId: string, threadId?: string) {
 
 /** Stops whatever a bot is doing in a thread. */
 export async function interrupt(threadId: string) {
-  const box = boxConfig();
   let stopped = 0;
   for (const [agentId, turn] of activeTurns()) {
     if (turn.threadId !== threadId) continue;
     turn.controller.abort();
+    const box = boxConfig(turn.userId);
     if (box) await interruptAgent(box, agentId).catch(() => undefined);
     stopped += 1;
   }
@@ -80,9 +81,9 @@ export function targetsFor(message: Message, thread: Thread, bots: Bot[]): Bot[]
   return chief ? [chief] : members.slice(0, 1);
 }
 
-/** Writes the bot's SOUL.md to its home, so it can read it (and you can edit it). */
+/** Writes the bot's SOUL.md to its home, in its owner's account, so it can read it (and you can edit it). */
 export async function syncSoul(bot: Bot) {
-  const box = boxConfig();
+  const box = boxConfig(bot.userId);
   if (!box) return;
   try {
     await ensureBotHome(box, bot.id);
@@ -149,7 +150,8 @@ export function promptFor(bot: Bot, thread: Thread, message: Message, bots: Bot[
  * delegation reports back to that teammate's thread.
  */
 export async function botTurn(bot: Bot, thread: Thread, message: Message): Promise<string> {
-  const box = boxConfig();
+  // The bot works as its owner on the box: their account, their home, their sign-ins.
+  const box = boxConfig(thread.userId);
   if (!box) {
     postMessage({ threadId: thread.id, author: "system", kind: "event", body: "No box is running, so no bot can work. Start the box container and set KRU_BOX_URL.", answered: true });
     return "";
@@ -158,7 +160,7 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message): Promi
   const agentId = agentIdFor(bot, thread);
   if (activeTurns().has(agentId)) throw new Error("already answering");
   const controller = new AbortController();
-  activeTurns().set(agentId, { botId: bot.id, threadId: thread.id, controller, startedAt: Date.now() });
+  activeTurns().set(agentId, { botId: bot.id, threadId: thread.id, userId: thread.userId, controller, startedAt: Date.now() });
   activity(thread.id, bot.id, "Thinking…");
   const bots = listBots({ includeHidden: true, userId: thread.userId });
   const askBot = async (target: Bot, prompt: string, depth: number): Promise<string> => {
@@ -199,8 +201,9 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message): Promi
       skills: skillsFor(message.body, skills),
       mcpServers: mcpServersFor(usable).map((m) => (m.authStatus === "needed" ? `${m.name} (waiting for the person to sign in: Settings → Apps → MCP servers → ${m.name} → Sign in; its tools fail until then)` : m.authStatus === "error" ? `${m.name} (sign-in problem: ${m.authError ?? "unknown"})` : m.name)),
     });
-    // One engine, model and effort for the whole team, chosen under Settings → AI.
-    const run = engineRun(settings);
+    // The owner's engine, model and effort, chosen under their Settings → AI.
+    const ai = getAi(thread.userId);
+    const run = engineRun(ai, thread.userId);
     const result = await cliTurn({
       box,
       agentId,
@@ -208,7 +211,7 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message): Promi
       engine: run.engine,
       access: run.access,
       modelId: run.model,
-      effort: settings.effort ?? defaultEffort(),
+      effort: ai.effort ?? defaultEffort(),
       permission: bot.approval,
       instructions,
       prompt: promptFor(bot, thread, message, bots),

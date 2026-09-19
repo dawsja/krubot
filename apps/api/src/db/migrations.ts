@@ -413,6 +413,42 @@ const MIGRATIONS: string[] = [
   `
   UPDATE kru_bots SET approval = 'ask' WHERE approval = 'edits';
   `,
+
+  /*
+   * The AI is each person's own: which CLI their bots run on, their plan
+   * or their API key per CLI, the model and the effort. API providers are
+   * each person's own too, so the table is rebuilt with a user id (the
+   * rows from before are the admin's; adoptOrphans fills user_id in once
+   * it knows who that is, and copies the team-wide engine settings from
+   * kru_settings into the admin's row). Every person has their own account
+   * on the computer, so a plan is their own sign-in there.
+   */
+  `
+  CREATE TABLE kru_user_ai (
+    user_id TEXT PRIMARY KEY,
+    engine TEXT NOT NULL DEFAULT 'claude',
+    engines TEXT NOT NULL DEFAULT '{}',
+    effort TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE kru_providers_new (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    kind TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    proxy_token TEXT NOT NULL UNIQUE,
+    last_check TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, kind)
+  );
+  INSERT INTO kru_providers_new (id, user_id, kind, base_url, api_key, proxy_token, last_check, created_at, updated_at)
+    SELECT 'legacy-' || kind, NULL, kind, base_url, api_key, proxy_token, last_check, created_at, updated_at FROM kru_providers;
+  DROP TABLE kru_providers;
+  ALTER TABLE kru_providers_new RENAME TO kru_providers;
+  CREATE INDEX kru_providers_user ON kru_providers (user_id);
+  `,
 ];
 
 export function runMigrations(db: Database) {

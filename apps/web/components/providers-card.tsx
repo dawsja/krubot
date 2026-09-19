@@ -26,7 +26,7 @@ export function useProviders() {
     void Promise.resolve().then(load);
   }, [load]);
   useLiveEvents((event) => {
-    if (event.topic === "settings") void load();
+    if (event.topic === "ai") void load();
   });
   return { providers, reload: load };
 }
@@ -182,7 +182,7 @@ export function ProvidersCard() {
     <Card>
       <CardHeader>
         <CardTitle>API keys</CardTitle>
-        <CardDescription>Run the bots on an API instead of a plan, or alongside one. Each key is stored encrypted in Kru Bot and added to requests on the way out, so the computer and the bots never hold it.</CardDescription>
+        <CardDescription>Run your bots on an API instead of a plan, or alongside one. Each key is yours alone, stored encrypted in Kru Bot and added to your bots&apos; requests on the way out, so the computer and the bots never hold it.</CardDescription>
       </CardHeader>
       <CardContent>
         {!providers ? (

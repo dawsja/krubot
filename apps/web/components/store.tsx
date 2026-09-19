@@ -25,7 +25,7 @@ type Store = {
   /** You: name, role and picture, as shown in the sidebar and on your messages. */
   me: Me;
   setMe: (me: Me) => void;
-  /** Whether you are the admin: the settings beyond your account, and the computer. */
+  /** Whether you are the admin: the team's settings, the skills, who signs in, and Update and Reset on the computer. */
   admin: boolean;
   /** The computer's update, when one is running or just finished. */
   boxUpdate: BoxUpdate | null;

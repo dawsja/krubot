@@ -4,31 +4,48 @@ import { composioConfigured } from "./composio.ts";
 import { listConnections } from "./data/settings.ts";
 import { isUpdating } from "./updater.ts";
 
-const CHECK_CACHE_MS = 5 * 60 * 1000;
-let cachedCheck: { at: number; check: ClaudeCheck } | null = null;
+/*
+ * The computer as one person sees it. Sign-ins are per person (each has
+ * their own account on the box, with their own CLI sign-ins), so the
+ * checks and their caches are kept by person; what runs on the box is
+ * the same for everyone.
+ */
 
-/** The box's answer about the CLI, kept for a while: each check is a CLI run. */
+const CHECK_CACHE_MS = 5 * 60 * 1000;
+const cachedChecks = new Map<string, { at: number; check: ClaudeCheck }>();
+
+/** The box's answer about the CLI in this person's account, kept for a while: each check is a CLI run. */
 export async function checkClaudeCached(box: BoxConfig, { fresh = false } = {}): Promise<ClaudeCheck> {
-  if (!fresh && cachedCheck && Date.now() - cachedCheck.at < CHECK_CACHE_MS) return cachedCheck.check;
+  const key = box.user ?? "";
+  const cached = cachedChecks.get(key);
+  if (!fresh && cached && Date.now() - cached.at < CHECK_CACHE_MS) return cached.check;
   const check = await checkClaude(box);
-  cachedCheck = { at: Date.now(), check };
+  cachedChecks.set(key, { at: Date.now(), check });
   return check;
 }
 
-export function forgetClaudeCheck() {
-  cachedCheck = null;
+/** Forgets one person's checks, or everyone's after an update. */
+export function forgetClaudeCheck(userId?: string) {
+  if (userId) {
+    cachedChecks.delete(userId);
+    cachedEngines.delete(userId);
+  } else {
+    cachedChecks.clear();
+    cachedEngines.clear();
+  }
   cachedVersions = null;
-  cachedEngines = null;
 }
 
-let cachedEngines: { at: number; engines: EnginesAuth } | null = null;
+const cachedEngines = new Map<string, { at: number; engines: EnginesAuth }>();
 /** Codex and Grok sign-ins change when someone runs a login in a terminal: kept only briefly. */
 const ENGINES_CACHE_MS = 30_000;
 
 async function enginesCached(box: BoxConfig, fresh = false): Promise<EnginesAuth | null> {
-  if (!fresh && cachedEngines && Date.now() - cachedEngines.at < ENGINES_CACHE_MS) return cachedEngines.engines;
+  const key = box.user ?? "";
+  const cached = cachedEngines.get(key);
+  if (!fresh && cached && Date.now() - cached.at < ENGINES_CACHE_MS) return cached.engines;
   const engines = await enginesAuth(box).catch(() => null);
-  if (engines) cachedEngines = { at: Date.now(), engines };
+  if (engines) cachedEngines.set(key, { at: Date.now(), engines });
   return engines;
 }
 
@@ -51,11 +68,12 @@ export async function claudeStatus(box: BoxConfig | null, fresh = false): Promis
   }
 }
 
-export async function boxStatus(userId: string, fresh = false): Promise<BoxStatus> {
+/** The status for one person: their sign-ins on the box, and, for the admin, everyone's live sessions. */
+export async function boxStatus(userId: string, { fresh = false, admin = false } = {}): Promise<BoxStatus> {
   let box: BoxConfig | null = null;
   let configError: string | null = null;
   try {
-    box = boxConfig();
+    box = boxConfig(userId);
   } catch (error) {
     configError = error instanceof Error ? error.message : "bad box config";
   }
@@ -82,7 +100,8 @@ export async function boxStatus(userId: string, fresh = false): Promise<BoxStatu
     reachable = true;
     updating = updating || Boolean(h.updating);
     if (!updating) {
-      agents = (await listAgents(box).catch(() => ({ agents: [] }))).agents;
+      const all = (await listAgents(box).catch(() => ({ agents: [] }))).agents;
+      agents = all.filter((a) => admin || a.user === userId).map(({ id, running, busy }) => ({ id, running, busy }));
       [versions, engines] = await Promise.all([versionsCached(box, fresh), enginesCached(box, fresh)]);
     }
   } catch {

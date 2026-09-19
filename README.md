@@ -35,12 +35,14 @@ It is not affiliated with xAI, Meta or Anthropic.
   answers land in your conversation. Templates ship with one ready, paused.
 - **Onboarding.** What you use every day, which teammates to start with, and
   what the bots run on, with a check that it's ready.
-- **Claude Code, Codex or Grok.** Settings → AI picks the engine every bot
-  runs on (Anthropic's Claude Code, OpenAI's Codex or xAI's Grok Build), on
-  your own plan or on an API key, with the model and effort; change it once
-  and the whole team switches on its next reply.
+- **Claude Code, Codex or Grok, on your own plan.** Settings → AI picks
+  the engine your bots run on (Anthropic's Claude Code, OpenAI's Codex or
+  xAI's Grok Build), on your own plan or on your own API key, with the
+  model and effort; change it once and your bots switch on their next
+  reply. Every person chooses their own: nobody's bots run on anyone
+  else's plan or key.
 - **Your own API keys, kept safe.** An Anthropic-compatible and an
-  OpenAI-compatible endpoint (a base URL and a key each). Keys are stored
+  OpenAI-compatible endpoint (a base URL and a key each), per person. Keys are stored
   encrypted and added to requests by the API on the way out, so the box and
   the bots never hold them.
 - **A computer that lasts.** The box keeps its home across restarts and
@@ -83,9 +85,12 @@ It is not affiliated with xAI, Meta or Anthropic.
 - **Your team's people.** Settings → Authentication takes an OIDC provider (Pocket
   ID, Authentik, Keycloak, Zitadel, any with discovery); the sign-in page
   gets a "Sign in with …" button, and everyone who uses it gets their own
-  bots and conversations. The first account, the one made with the setup
-  token, is the admin: the AI, the computer, the apps, the skills, the
-  secrets and the provider are its alone. Everyone else is a user.
+  bots and conversations, their own Linux account on the computer (a home
+  of their own, with their own CLI sign-ins, terminal and desktop), and
+  their own AI, apps and secrets. The first account, the one made with the
+  setup token, is the admin: the team settings, the skills, Update and
+  Reset on the computer, and the provider are its alone. Everyone else is
+  a user.
 - **On your phone.** The same app, laid out like a messaging app: a Chats
   screen, a conversation with the bot's details and routines a tap away,
   and Chats, Computer and Settings in a bar at the bottom. Kru Bot for
@@ -139,15 +144,18 @@ docker compose logs api | grep "setup token"
 ```
 
 Open http://localhost:3000, register with the setup token, and run the
-setup: pick the apps you use, pick your first teammates, then pick what the
-bots run on: sign in to Claude Code, Codex or Grok from a terminal on the
-box, or paste an API key. Message a bot.
+setup: pick the apps you use, pick your first teammates, then pick what
+your bots run on: sign in to Claude Code, Codex or Grok from a terminal on
+the box, or paste an API key. Message a bot. Everyone who joins later does
+the same for themselves under Settings → AI, in their own account on the
+box.
 
 To make a bot your Chief of Staff, tell it so in its conversation: it
 rewrites its own title and description and starts delegating to the others.
 There is no checkbox for it.
 
-Requirements: Docker, and a Claude, ChatGPT or Grok plan, or an API key.
+Requirements: Docker, and a Claude, ChatGPT or Grok plan, or an API key,
+for each person who uses it.
 Composio is optional: without it, bots still have the browser and the
 shell.
 
@@ -177,30 +185,47 @@ controls Docker on the machine, so remove the mount if you'd rather not;
 Update then patches the running box in place and skips the image.
 
 Settings → Computer also shows what runs on the box (Node, Bun, Claude
-Code, Codex, Grok) and whether Claude Code is signed in; Settings → AI
-shows whether the engine you picked is ready.
+Code, Codex, Grok) and whether Claude Code is signed in for you; Settings
+→ AI shows whether the engine you picked is ready.
 
-**Reset** (next to Update) is the fresh-install button: the home folder is
-wiped except the bots' homes, the team's files, the skills and the CLIs'
-sign-ins, and the container is rebuilt from its image when the API can reach
+**Reset** (next to Update, the admin's) is the fresh-install button: the
+admin's home folder is wiped except their bots' homes, the team's files,
+the skills and the CLIs' sign-ins, other people's homes stay as they are,
+and the container is rebuilt from its image when the API can reach
 Docker.
+
+### Everyone's own computer account
+
+The box is one machine, and every person has a Linux account on it. The
+admin is `agent`, with the home the box always had. Everyone who signs in
+through the provider gets a user of their own (`kru-<name>`) and a private
+home under `/home` (the `kru-box-homes` volume), made the first time they
+or their bots use the computer and made again after an image update, with
+the same ids. Their bots run as that user in that home; their terminals
+and their desktop are theirs; their Claude Code, Codex and Grok sign-ins
+live in their own `~/.claude`, `~/.codex` and `~/.grok`; nobody else's
+bots can read any of it. Removing a person under Settings → Authentication
+removes their account there too, home and all. The skills library is the
+one thing shared: every home's `~/.skills` links to it.
 
 ### Settings
 
 Click your name at the bottom of the sidebar for Settings and Sign out.
-Settings has eight sections, each with its own address. Everyone has the
-first; the rest are the admin's:
+Settings has eight sections, each with its own address. Account, AI,
+Computer, Apps and Secrets are everyone's own; Team, Skills and
+Authentication are the admin's:
 
 - **Account.** Click your picture to change it (kept in the database,
   shown in the sidebar and on your messages), change your password, pick
   the theme, and turn browser notifications on for this device. Each
   bot's profile has its own notification switch.
 - **Team.** The time zone and how many bots work at once.
-- **AI.** The engine (Claude Code, Codex or Grok), your plan or an API key
-  for it, the model and the effort; and the API keys, an
-  Anthropic-compatible and an OpenAI-compatible endpoint, write-only once
-  saved.
-- **Computer.** Status, versions, Update and Reset.
+- **AI.** The engine your bots run on (Claude Code, Codex or Grok), your
+  plan or your API key for it, the model and the effort; and your API
+  keys, an Anthropic-compatible and an OpenAI-compatible endpoint,
+  write-only once saved. Each person's own.
+- **Computer.** Status, versions, your sign-ins in your own account on it,
+  and a way in; Update and Reset for the admin.
 - **Skills.** The library, an editor, and the marketplace's packaged
   skills.
 - **Apps.** Your Composio key, Composio's apps with their real logos
@@ -367,8 +392,10 @@ packages/shared  Types, zod schemas, templates and the app catalog shared by web
 
 - One account per install; registration needs the setup token from the API's logs.
 - Secrets at rest are encrypted with a key in the data volume (`KRU_SECRET_KEY` to bring your own).
-- The box runs every bot as an unprivileged user; the API reaches it with a bearer token over the Compose network only.
+- The box runs every bot as its owner's unprivileged user; the API reaches it with a bearer token over the Compose network only.
 - All of a person's bots share one computer, like Grok Bot. Do not treat separate bots as a security boundary.
+- Every person has their own Linux account and a home of their own on the box (mode 0700). That keeps people's files, sign-ins and work apart, but it is Unix permissions inside one container, not a hard security boundary; the container is.
+- Everyone's bots run on that person's own plan or API key. Nothing about the AI is shared between people.
 - Connected-app credentials never reach the box: the API executes app actions through Composio.
 - The Docker socket mounted on the API (for image updates) is the one thing here with host access; drop the mount to keep the API off it.
 

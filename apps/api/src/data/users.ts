@@ -2,6 +2,7 @@ import type { Me, SignInProvider, UserRole, UserSummary } from "@krubot/shared";
 import { ensureKruDatabase, transaction } from "../db/init.ts";
 import { emit } from "../events.ts";
 import { now } from "../ids.ts";
+import { adoptLegacyAi } from "./ai.ts";
 
 /*
  * The people, as Better Auth keeps them in its `user` and `account` tables
@@ -73,6 +74,8 @@ export function adoptOrphans(adminId: string) {
     db.query("UPDATE kru_connections SET user_id = ? WHERE user_id IS NULL").run(adminId);
     db.query("UPDATE kru_mcp_servers SET user_id = ? WHERE user_id IS NULL").run(adminId);
     db.query("UPDATE kru_secrets SET user_id = ? WHERE user_id IS NULL").run(adminId);
+    db.query("UPDATE kru_providers SET user_id = ? WHERE user_id IS NULL").run(adminId);
+    adoptLegacyAi(adminId);
     const legacy = db.query("SELECT media_type, data, updated_at FROM kru_avatar WHERE id = 1").get() as { media_type: string; data: Uint8Array; updated_at: string } | null;
     if (legacy) {
       db.query("INSERT OR IGNORE INTO kru_user_avatars (user_id, media_type, data, updated_at) VALUES (?, ?, ?, ?)").run(adminId, legacy.media_type, legacy.data, legacy.updated_at);
@@ -83,8 +86,8 @@ export function adoptOrphans(adminId: string) {
 
 /**
  * Removes what Kru keeps for a person; Better Auth's own rows (the user,
- * its accounts and sessions) go through its admin API. The bots' homes on
- * the computer are the caller's to delete first.
+ * its accounts and sessions) go through its admin API, and their account
+ * on the computer, home and all, is the caller's to remove.
  */
 export function deleteUserData(userId: string): { bots: string[] } {
   return transaction((db) => {
@@ -104,6 +107,8 @@ export function deleteUserData(userId: string): { bots: string[] } {
     db.query("DELETE FROM kru_mcp_servers WHERE user_id = ?").run(userId);
     db.query("DELETE FROM kru_secrets WHERE user_id = ?").run(userId);
     db.query("DELETE FROM kru_composio_keys WHERE user_id = ?").run(userId);
+    db.query("DELETE FROM kru_providers WHERE user_id = ?").run(userId);
+    db.query("DELETE FROM kru_user_ai WHERE user_id = ?").run(userId);
     return { bots };
   });
 }
