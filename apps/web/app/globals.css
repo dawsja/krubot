@@ -57,6 +57,7 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-primary-edge: var(--primary-edge);
+  --color-primary-edge-focus: var(--primary-edge-focus);
   --color-bubble-you: var(--bubble-you);
   --color-bubble-bot: var(--bubble-bot);
   --color-control-foreground: var(--control-foreground);
@@ -168,6 +169,8 @@
   --primary: var(--paper-white);
   --primary-foreground: var(--carbon);
   --primary-edge: #ebe8e1;
+  /* The same edge with the field focused: one step, never the orange ring. */
+  --primary-edge-focus: #c9c5bb;
   --primary-shadow: 0 1px 2px rgba(20, 16, 8, 0.06), 0 2px 8px rgba(20, 16, 8, 0.06);
   --bubble-you: #dfdbd3;
   --bubble-bot: #ebe8e1;
@@ -250,6 +253,7 @@
   --primary: #34343a;
   --primary-foreground: var(--carbon);
   --primary-edge: #4a4a52;
+  --primary-edge-focus: #6b6b75;
   --primary-shadow: none;
   --bubble-you: #34343a;
   --bubble-bot: #1c1c1f;

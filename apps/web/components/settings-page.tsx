@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, LogOut, Monitor } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AboutCard } from "@/components/about-card";
 import { AccountSection } from "@/components/account-section";
 import { ComposioCard } from "@/components/composio-card";
 import { ComputerCard } from "@/components/computer-card";
@@ -189,6 +190,7 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
           <AccountSection user={user} />
           <NotificationsCard />
           <ServerCard />
+          <AboutCard />
         </>
       );
       break;

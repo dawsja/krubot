@@ -1,7 +1,7 @@
 "use client";
 
 import { handleOf, type Approval, type Bot, type Message, type Thread } from "@krubot/shared";
-import { Bot as BotIcon, ChevronLeft, Clock, Download, EllipsisVertical, FileText, PanelRight, Paperclip, Plus, SendHorizonal, Square, Users, X } from "lucide-react";
+import { ArrowUp, Bot as BotIcon, ChevronLeft, Clock, Download, EllipsisVertical, FileText, PanelRight, Paperclip, Plus, Square, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
@@ -586,7 +586,7 @@ export function Conversation({ threadId }: { threadId: string }) {
             <TooltipContent>Attach files</TooltipContent>
           </Tooltip>
           {/* 44px like the circle beside it; the send circle sits 6px in from the pill's edge. */}
-          <InputGroup className="min-h-11 rounded-[22px] border-primary-edge pr-1.5 shadow-(--primary-shadow)">
+          <InputGroup variant="pill" className="min-h-11 rounded-[22px] pr-1.5">
             <InputGroupTextarea
               ref={textarea}
               value={draft}
@@ -606,7 +606,7 @@ export function Conversation({ threadId }: { threadId: string }) {
             <InputGroupAddon align="inline-end" className="mr-0 self-end pt-0 pr-0 pb-[5px] has-[>button]:mr-0">
               <Tooltip>
                 <TooltipTrigger render={<InputGroupButton type="submit" variant="default" size="icon-sm" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="rounded-full" />}>
-                  <SendHorizonal aria-hidden="true" />
+                  <ArrowUp aria-hidden="true" />
                 </TooltipTrigger>
                 <TooltipContent>{touch ? "Send" : "Send (Enter)"}</TooltipContent>
               </Tooltip>

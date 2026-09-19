@@ -173,7 +173,7 @@ export function useBotSearch() {
 
 export function BotSearchInput({ query, setQuery, autoFocus = false, className }: { query: string; setQuery: (q: string) => void; autoFocus?: boolean; className?: string }) {
   return (
-    <InputGroup className={cn("h-9 flex-1 rounded-full bg-muted border-transparent", className)}>
+    <InputGroup variant="pill" className={cn("h-9 flex-1 rounded-full", className)}>
       <InputGroupInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Search bots" autoFocus={autoFocus} className="text-[13px]" />
       <InputGroupAddon>
         <Search aria-hidden="true" />
