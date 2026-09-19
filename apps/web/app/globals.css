@@ -169,14 +169,13 @@
   --primary: var(--paper-white);
   --primary-foreground: var(--carbon);
   /*
-   * No edge on the light page: a white pill on linen is drawn by its own
-   * shadow, and an outline makes it read as a box instead of something
-   * floating. The dark theme has the edge instead, where a shadow can't
-   * be seen. A focused field shows a soft grey edge either way.
+   * A slight grey edge draws the shape in both themes, and nothing else:
+   * no shadow, so a button, a circle and a field are the same object at
+   * any size. A focused field steps that edge one shade.
    */
-  --primary-edge: var(--paper-white);
+  --primary-edge: #e4e0d8;
   --primary-edge-focus: #d6d2c9;
-  --primary-shadow: 0 1px 2px rgba(20, 16, 8, 0.08), 0 4px 12px rgba(20, 16, 8, 0.07);
+  --primary-shadow: none;
   --bubble-you: #dfdbd3;
   --bubble-bot: #ebe8e1;
   /*

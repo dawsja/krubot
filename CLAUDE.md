@@ -64,16 +64,13 @@ what is here. The README says what Kru Bot is; this says how it is made.
   / `text-control-foreground`, ink in both themes, so on and off always
   read; `variant="control"` on a button is for the rare one that must. A
   field that sits beside those circles is `<InputGroup variant="pill">`,
-  the same surface as a button. What draws that surface differs by theme
-  and both are `--primary-edge`: nothing in the light, where a white pill
-  on linen is defined by `--primary-shadow` and an outline would make it a
-  box, and a grey edge in the dark, where no shadow can be seen. A focused
-  field goes to `--primary-edge-focus`, never the orange ring, which reads
-  as a band on the light page and vanishes on the dark one. Something
-  outlined stays outlined (`variant="outline"`, the `pill` toggle, a form
-  field in a card): on a card there is nothing to float against. The
-  orange brand is an accent only: logo, focus ring on buttons, links,
-  unread dot. Secondary actions are `variant="outline"`, tertiary
+  the same surface as a button. A slight grey `--primary-edge` draws that
+  shape in both themes and nothing else does: `--primary-shadow` is
+  `none`, so a button, a circle and a field read as one object at any
+  size. A focused field steps to `--primary-edge-focus`, never the orange
+  ring, which reads as a band on the light page and vanishes on the dark
+  one. The orange brand is an accent only: logo, focus ring on buttons,
+  links, unread dot. Secondary actions are `variant="outline"`, tertiary
   `ghost`, destructive `destructive`. Use `text-muted-foreground`,
   `bg-card`, `bg-muted`, `border` and friends; never raw Tailwind colours,
   never `dark:` overrides by hand, never the old `bg-carbon` /
