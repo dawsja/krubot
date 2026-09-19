@@ -146,10 +146,10 @@ export function useBotSearch() {
   return { query, setQuery, rows, hits };
 }
 
-export function BotSearchInput({ query, setQuery, className }: { query: string; setQuery: (q: string) => void; className?: string }) {
+export function BotSearchInput({ query, setQuery, autoFocus = false, className }: { query: string; setQuery: (q: string) => void; autoFocus?: boolean; className?: string }) {
   return (
     <InputGroup className={cn("h-9 flex-1 rounded-full bg-muted border-transparent", className)}>
-      <InputGroupInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Search bots" className="text-[13px]" />
+      <InputGroupInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Search bots" autoFocus={autoFocus} className="text-[13px]" />
       <InputGroupAddon>
         <Search aria-hidden="true" />
       </InputGroupAddon>
@@ -158,7 +158,7 @@ export function BotSearchInput({ query, setQuery, className }: { query: string; 
 }
 
 /** The + menu: a bot, or a group chat. */
-export function NewMenu({ onOpen, size = "icon-lg" }: { onOpen: (dialog: ShellDialog) => void; size?: "icon-lg" | "icon" }) {
+export function NewMenu({ onOpen, size = "icon-lg" }: { onOpen: (dialog: ShellDialog) => void; size?: "icon-xl" | "icon-lg" | "icon" }) {
   const { bots } = useStore();
   return (
     <DropdownMenu>

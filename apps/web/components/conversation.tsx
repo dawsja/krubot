@@ -29,6 +29,7 @@ import { Message as MessageRow, MessageAvatar, MessageContent, MessageFooter, Me
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport, useMessageScroller } from "@/components/ui/message-scroller";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCoarsePointer } from "@/hooks/use-mobile";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 import { api, post } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -284,6 +285,8 @@ export function Conversation({ threadId }: { threadId: string }) {
 
   // The page keys this component by thread id, so state starts fresh per
   // conversation; only the loads happen here, off the effect's own tick.
+  // A swipe in from the left edge goes back to Chats on a phone.
+  useSwipeBack("/app");
   useEffect(() => {
     void Promise.resolve().then(() => {
       void loadInfo();

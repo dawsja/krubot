@@ -53,11 +53,15 @@ what is here. The README says what Kru Bot is; this says how it is made.
   the `pill` toggle variant, the animated slider). If a look is needed in
   several places, change or extend the primitive; `className` on a call
   site is for layout.
-- **Colours are tokens.** One primary, ink: `bg-primary` /
-  `text-primary-foreground` (carbon on paper-white, inverted in dark). Every
-  main button, switch, checkbox, slider, pressed pill and your message
-  bubble uses it. The orange brand is an accent only: logo, focus ring,
-  links, unread dot. Secondary actions are `variant="outline"`, tertiary
+- **Colours are tokens.** One primary for actions: `bg-primary` /
+  `text-primary-foreground`, ink (carbon on paper-white) in the light and a
+  grey in the dark, with `border-primary-edge` as a button's ring. Every
+  main button and your message bubble use it; a bot's bubble is the
+  `outline` variant, which is the darker `bg-muted` in the dark. A control's
+  on state (switch, checkbox, radio, slider, pressed pill) is `bg-control`
+  / `text-control-foreground`, ink in both themes, so on and off always
+  read. The orange brand is an accent only: logo, focus ring, links, unread
+  dot. Secondary actions are `variant="outline"`, tertiary
   `ghost`, destructive `destructive`. Use `text-muted-foreground`,
   `bg-card`, `bg-muted`, `border` and friends; never raw Tailwind colours,
   never `dark:` overrides by hand, never the old `bg-carbon` /
@@ -66,11 +70,14 @@ what is here. The README says what Kru Bot is; this says how it is made.
   fills must read on both.
 - **Phones first, one screen at a time.** Under `md` the app is a
   messaging app: `/app` is the Chats screen (`chats-screen.tsx`, the same
-  list the sidebar draws), a conversation is a full screen with a back
+  list the sidebar draws: your picture top left opens Settings, Search and
+  New are circles top right, Search swaps in the field), a conversation is a full screen with a back
   chevron, an Info button that opens the details sheet (the right panel's
   content) and a menu with the bot's actions (`thread-actions.tsx`, shared
-  with the sidebar's long-press menu), and Chats, Computer and Settings sit
-  in the bottom bar (`mobile-nav.tsx`, hidden inside a conversation).
+  with the sidebar's long-press menu). There is no bottom bar: the app
+  opens on Chats, Settings is behind your picture (with Open the computer
+  as a row for the admin), and every screen goes back with its chevron or
+  a swipe in from the left edge (`hooks/use-swipe-back.ts`).
   `/app/settings` is the list of sections on a phone and the account on a
   desktop. Wide and narrow are CSS, not `useIsMobile`, so the server's
   HTML is right for both: layout code says `wide:` and `xwide:` (the
@@ -109,8 +116,8 @@ what is here. The README says what Kru Bot is; this says how it is made.
   Computer tab, "Open its computer", the computer section of a bot's
   details). A new card goes into an existing section, or a new entry there
   with a URL the API and the bots can point at (`Settings → Apps → MCP
-  servers` in copy). Sign out is in the profile menu only: the sidebar's
-  footer on a desktop, your picture on the Chats screen on a phone.
+  servers` in copy). Sign out is in the sidebar footer's profile menu on a
+  desktop and the last row of the Settings list on a phone (`useSignOut`).
 - Copy is plain English in sentence case, short, no exclamation marks. Say
   "the computer" to the person, "the box" in code and docs for developers.
 

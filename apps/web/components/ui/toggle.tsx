@@ -12,7 +12,7 @@ const toggleVariants = cva(
         default: "bg-transparent",
         outline: "border border-input bg-transparent hover:bg-muted",
         /* Kru's chip: a pill on the card surface that fills with ink when pressed. */
-        pill: "rounded-full border border-input bg-card hover:border-ash hover:bg-card data-pressed:border-primary data-pressed:bg-primary data-pressed:text-primary-foreground aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground",
+        pill: "rounded-full border border-input bg-card hover:border-ash hover:bg-card data-pressed:border-control data-pressed:bg-control data-pressed:text-control-foreground aria-pressed:border-control aria-pressed:bg-control aria-pressed:text-control-foreground",
       },
       size: {
         default:

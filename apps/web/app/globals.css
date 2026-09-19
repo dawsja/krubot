@@ -56,6 +56,9 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-edge: var(--primary-edge);
+  --color-control-foreground: var(--control-foreground);
+  --color-control: var(--control);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -156,6 +159,15 @@
    */
   --primary: var(--carbon);
   --primary-foreground: var(--paper-white);
+  /* The edge of a primary button: the fill itself here, a lighter ring in the dark. */
+  --primary-edge: var(--primary);
+  /*
+   * A control's "on" state (switch, checkbox, radio, slider, pressed pill)
+   * is ink in both themes, so on and off always read; in the dark the
+   * primary is grey and would not.
+   */
+  --control: var(--carbon);
+  --control-foreground: var(--paper-white);
   --secondary: var(--mist);
   --secondary-foreground: var(--carbon);
   --muted: var(--mist);
@@ -221,8 +233,17 @@
   --card-foreground: var(--carbon);
   --popover: var(--paper-white);
   --popover-foreground: var(--carbon);
-  --primary: var(--carbon);
-  --primary-foreground: var(--paper-white);
+  /*
+   * In the dark the primary is a grey, not white: buttons, the + and
+   * Search circles and your message bubble sit as darker shapes on the
+   * page (a bot's bubble is the darker --muted), with a lighter ring on a
+   * button so it stays crisp. Ink is kept for --control.
+   */
+  --primary: #34343a;
+  --primary-foreground: var(--carbon);
+  --primary-edge: #4a4a52;
+  --control: var(--carbon);
+  --control-foreground: var(--paper-white);
   --secondary: var(--mist);
   --secondary-foreground: var(--carbon);
   --muted: var(--mist);

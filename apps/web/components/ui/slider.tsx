@@ -35,7 +35,7 @@ function Slider({
         >
           <SliderPrimitive.Indicator
             data-slot="slider-range"
-            className="bg-primary select-none data-horizontal:h-full data-vertical:w-full not-data-dragging:transition-[width,height] not-data-dragging:duration-300 not-data-dragging:ease-[cubic-bezier(.2,.8,.2,1)]"
+            className="bg-control select-none data-horizontal:h-full data-vertical:w-full not-data-dragging:transition-[width,height] not-data-dragging:duration-300 not-data-dragging:ease-[cubic-bezier(.2,.8,.2,1)]"
           />
         </SliderPrimitive.Track>
         {Array.from({ length: _values.length }, (_, index) => (
@@ -43,7 +43,7 @@ function Slider({
             data-slot="slider-thumb"
             key={index}
             getAriaValueText={getAriaValueText}
-            className="relative block size-5 shrink-0 rounded-full border-2 border-primary bg-card shadow-subtle-2 ring-ring/50 transition-[color,box-shadow,scale] select-none after:absolute after:-inset-2 not-data-dragging:transition-[inset-inline-start,color,box-shadow,scale] not-data-dragging:duration-300 not-data-dragging:ease-[cubic-bezier(.2,.8,.2,1)] hover:scale-110 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
+            className="relative block size-5 shrink-0 rounded-full border-2 border-control bg-card shadow-subtle-2 ring-ring/50 transition-[color,box-shadow,scale] select-none after:absolute after:-inset-2 not-data-dragging:transition-[inset-inline-start,color,box-shadow,scale] not-data-dragging:duration-300 not-data-dragging:ease-[cubic-bezier(.2,.8,.2,1)] hover:scale-110 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
           />
         ))}
       </SliderPrimitive.Control>
