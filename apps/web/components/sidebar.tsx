@@ -77,9 +77,10 @@ function PinnedTile({ thread, bot, active, onOpen, onAsk }: { thread: ThreadRow;
   const { setOpenMobile } = useSidebar();
   return (
     <ThreadMenu thread={thread} bot={bot} onOpen={onOpen} onAsk={onAsk} trigger={<li className="list-none" />}>
-      <Link href={`/app/t/${thread.id}`} aria-current={active ? "page" : undefined} onClick={() => setOpenMobile(false)} className="relative flex w-22 flex-col items-center gap-1.5 rounded-2xl py-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-        <BotAvatar bot={bot} size={64} />
-        <span className={cn("max-w-full truncate text-[13px]", active ? "font-medium text-foreground" : "text-muted-foreground")}>{bot.name}</span>
+      <Link href={`/app/t/${thread.id}`} aria-current={active ? "page" : undefined} onClick={() => setOpenMobile(false)} className="relative flex w-28 flex-col items-center gap-3 rounded-2xl py-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 wide:w-22 wide:gap-1.5 wide:py-2">
+        <BotAvatar bot={bot} size={96} className="wide:hidden" />
+        <BotAvatar bot={bot} size={64} className="hidden wide:inline-flex" />
+        <span className={cn("max-w-full truncate text-[16px] wide:text-[13px]", active ? "font-medium text-foreground" : "text-muted-foreground")}>{bot.name}</span>
         {thread.unread > 0 && !active ? <span className="absolute top-2 right-3 size-2.5 rounded-full ring-2 ring-background" style={{ background: bot.color }} aria-label={`${thread.unread} unread`} /> : null}
       </Link>
     </ThreadMenu>
@@ -91,9 +92,12 @@ function Row({ thread, bot, active, bots, activity, onOpen, onAsk }: { thread: T
   const working = Object.keys(activity).length > 0;
   return (
     <ThreadMenu thread={thread} bot={bot} onOpen={onOpen} onAsk={onAsk} trigger={<SidebarMenuItem />}>
-        <SidebarMenuButton size="lg" isActive={active} render={<Link href={`/app/t/${thread.id}`} aria-current={active ? "page" : undefined} onClick={() => setOpenMobile(false)} />} className="h-16 gap-3 rounded-xl px-2.5 data-active:bg-card data-active:shadow-subtle hover:bg-card/60 wide:h-14">
+        <SidebarMenuButton size="lg" isActive={active} render={<Link href={`/app/t/${thread.id}`} aria-current={active ? "page" : undefined} onClick={() => setOpenMobile(false)} />} className="h-[76px] gap-4 rounded-2xl px-3 data-active:bg-card data-active:shadow-subtle hover:bg-card/60 wide:h-14 wide:gap-3 wide:rounded-xl wide:px-2.5">
           {bot ? (
-            <BotAvatar bot={bot} size={40} />
+            <>
+              <BotAvatar bot={bot} size={48} className="wide:hidden" />
+              <BotAvatar bot={bot} size={40} className="hidden wide:inline-flex" />
+            </>
           ) : (
             <Avatar size="lg">
               <AvatarFallback>
@@ -104,17 +108,17 @@ function Row({ thread, bot, active, bots, activity, onOpen, onAsk }: { thread: T
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex items-baseline justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate text-[15px] font-semibold wide:text-[14px]">{thread.name || bot?.name || "Room"}</span>
+                <span className="truncate text-[17px] font-semibold wide:text-[14px]">{thread.name || bot?.name || "Room"}</span>
                 {bot?.title && thread.kind !== "room" ? (
-                  <Badge variant="secondary" className="h-4 max-w-[55%] min-w-0 shrink px-1.5 text-[10.5px] font-normal text-muted-foreground" title={bot.title}>
+                  <Badge variant="secondary" className="h-5 max-w-[55%] min-w-0 shrink px-1.5 text-[11.5px] font-normal text-muted-foreground wide:h-4 wide:text-[10.5px]" title={bot.title}>
                     <span className="truncate">{bot.title}</span>
                   </Badge>
                 ) : null}
                 {bot?.pinned ? <Pin className="size-3 shrink-0 text-muted-foreground" aria-label="Pinned" /> : null}
               </span>
-              {thread.lastMessage ? <span className="shrink-0 text-[11px] text-ash">{shortTime(thread.lastMessage.at)}</span> : null}
+              {thread.lastMessage ? <span className="shrink-0 text-[13px] text-ash wide:text-[11px]">{shortTime(thread.lastMessage.at)}</span> : null}
             </span>
-            <span className={cn("flex items-center gap-1.5 text-[13px] leading-5 text-muted-foreground wide:text-[12.5px]", working && "italic")}>
+            <span className={cn("flex items-center gap-1.5 text-[15px] leading-6 text-muted-foreground wide:text-[12.5px] wide:leading-5", working && "italic")}>
               <span className="truncate">{preview(thread, bots, activity)}</span>
               {thread.unread > 0 && !active ? <span className="ml-auto size-2 shrink-0 rounded-full" style={{ background: bot?.color ?? "var(--brand)" }} aria-label={`${thread.unread} unread`} /> : null}
             </span>
@@ -249,7 +253,7 @@ export function BotRows({ rows, hits, query, setQuery, onOpen, onAsk }: { rows: 
         <>
           {/* Pinned bots sit above the list as big faces, like a favourites row; a search lists everyone. */}
           {pinned.length ? (
-            <ul className="mb-1 flex flex-wrap justify-center gap-x-1 gap-y-2 px-1 pt-2 pb-3" aria-label="Pinned bots">
+            <ul className="mb-2 flex flex-wrap justify-center gap-x-2 gap-y-2 px-1 pt-6 pb-4 wide:mb-1 wide:gap-x-1 wide:pt-2 wide:pb-3" aria-label="Pinned bots">
               {pinned.map(({ thread, bot }) => (
                 <PinnedTile key={thread.id} thread={thread} bot={bot} active={pathname === `/app/t/${thread.id}`} onOpen={onOpen} onAsk={onAsk} />
               ))}

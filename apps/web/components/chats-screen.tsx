@@ -43,7 +43,7 @@ export function ChatsScreen({ className }: { className?: string }) {
         ) : (
           <>
             <Link href="/app/settings" aria-label="Settings" className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-              <PersonAvatar name={me.name} avatar={me.avatar} size={40} />
+              <PersonAvatar name={me.name} avatar={me.avatar} size={44} />
             </Link>
             <span className="flex-1" />
             <Button size="icon-xl" aria-label="Search" onClick={() => setSearching(true)}>
@@ -53,7 +53,7 @@ export function ChatsScreen({ className }: { className?: string }) {
           </>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(16px+env(safe-area-inset-bottom))]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-[calc(16px+env(safe-area-inset-bottom))]">
         <ApprovalsBadge className="mx-1 mb-2 w-[calc(100%-8px)]" />
         <BotRows rows={rows} hits={hits} query={query} setQuery={setQuery} onOpen={onOpen} onAsk={setAsk} />
       </div>
