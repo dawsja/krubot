@@ -101,7 +101,7 @@ export function BotDialog({ botId, onClose }: { botId: string | null; onClose: (
                 {/* The colour swatches are radios drawn as dots. */}
                 <RadioGroup aria-label="Color" value={form.color} onValueChange={(value) => typeof value === "string" && set("color", value)} className="flex w-auto flex-wrap justify-center gap-1">
                   {BOT_COLORS.map((c) => (
-                    <RadioGroupItem key={c} value={c} aria-label={c} className="size-5 border-2 border-transparent bg-(--swatch) ring-primary ring-offset-2 ring-offset-card data-checked:border-transparent data-checked:bg-(--swatch) data-checked:ring-2 dark:bg-(--swatch) dark:data-checked:bg-(--swatch) [&>span]:hidden" style={{ "--swatch": c } as React.CSSProperties} />
+                    <RadioGroupItem key={c} value={c} aria-label={c} className="size-5 border-2 border-transparent bg-(--swatch) ring-control ring-offset-2 ring-offset-card data-checked:border-transparent data-checked:bg-(--swatch) data-checked:ring-2 dark:bg-(--swatch) dark:data-checked:bg-(--swatch) [&>span]:hidden" style={{ "--swatch": c } as React.CSSProperties} />
                   ))}
                 </RadioGroup>
                 <ToggleGroup aria-label="Expression" variant="pill" size="sm" value={[form.expression]} onValueChange={(v) => v[0] && set("expression", v[0] as BotExpression)} spacing={1} className="flex-wrap justify-center">

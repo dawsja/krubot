@@ -168,7 +168,7 @@ export function Onboarding() {
               {catalog.map((app) => {
                 const on = apps.includes(app.toolkit);
                 return (
-                  <ToggleGroupItem key={app.toolkit} value={app.toolkit} className="h-12 justify-start gap-2.5 rounded-xl bg-card px-3 text-[14px] font-medium hover:border-ash hover:bg-card data-pressed:border-primary data-pressed:bg-card data-pressed:ring-1 data-pressed:ring-primary aria-pressed:border-primary aria-pressed:bg-card aria-pressed:ring-1 aria-pressed:ring-primary">
+                  <ToggleGroupItem key={app.toolkit} value={app.toolkit} className="h-12 justify-start gap-2.5 rounded-xl bg-card px-3 text-[14px] font-medium hover:border-ash hover:bg-card data-pressed:border-control data-pressed:bg-card data-pressed:ring-1 data-pressed:ring-control aria-pressed:border-control aria-pressed:bg-card aria-pressed:ring-1 aria-pressed:ring-control">
                     <AppIcon toolkit={app.toolkit} logo={app.logo} size={22} />
                     <span className="flex-1 truncate text-left">{app.name}</span>
                     {on ? (

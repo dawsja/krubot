@@ -146,7 +146,7 @@ export function ComputerCard({ status, onCheck }: { status: BoxStatus | null; on
             </Progress>
             {boxUpdate.error ? <p className="text-[12.5px] text-destructive">{boxUpdate.error}</p> : null}
             {showLog ? (
-              <pre ref={logRef} className="max-h-56 overflow-y-auto rounded-lg bg-foreground/90 p-3 font-mono text-[11.5px] leading-5 whitespace-pre-wrap text-background dark:bg-black/40">
+              <pre ref={logRef} className="max-h-56 overflow-y-auto rounded-lg border bg-background p-3 font-mono text-[11.5px] leading-5 whitespace-pre-wrap text-foreground dark:bg-black/40">
                 {boxUpdate.log.join("\n") || "…"}
               </pre>
             ) : null}

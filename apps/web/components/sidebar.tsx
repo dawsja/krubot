@@ -107,10 +107,11 @@ function Row({ thread, bot, active, bots, activity, onOpen, onAsk }: { thread: T
           )}
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex items-baseline justify-between gap-2">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate text-[17px] font-semibold wide:text-[14px]">{thread.name || bot?.name || "Room"}</span>
+              {/* The name comes first; the job badge takes what is left of the row and shortens only when it must. */}
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="max-w-[75%] shrink-0 truncate text-[17px] font-semibold wide:text-[14px]">{thread.name || bot?.name || "Room"}</span>
                 {bot?.title && thread.kind !== "room" ? (
-                  <Badge variant="secondary" className="h-5 max-w-[55%] min-w-0 shrink px-1.5 text-[11.5px] font-normal text-muted-foreground wide:h-4 wide:text-[10.5px]" title={bot.title}>
+                  <Badge variant="secondary" className="h-5 min-w-0 shrink px-1.5 text-[11.5px] font-normal text-muted-foreground wide:h-4 wide:text-[10.5px]" title={bot.title}>
                     <span className="truncate">{bot.title}</span>
                   </Badge>
                 ) : null}

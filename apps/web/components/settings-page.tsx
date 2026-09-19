@@ -320,9 +320,9 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 pt-[max(16px,env(safe-area-inset-top))] pb-[calc(32px+env(safe-area-inset-bottom))] wide:px-6 wide:py-8">
         {/* A phone: the list, or one section with a way back to it. */}
-        <div className="-ml-2 flex h-11 items-center gap-1 wide:hidden">
-          <Button variant="ghost" size="icon-lg" aria-label={index ? "Back to chats" : "All settings"} render={<Link href={back} />} nativeButton={false}>
-            <ChevronLeft aria-hidden="true" className="size-5" />
+        <div className="flex h-11 items-center gap-3 wide:hidden">
+          <Button size="icon-xl" aria-label={index ? "Back to chats" : "All settings"} render={<Link href={back} />} nativeButton={false}>
+            <ChevronLeft aria-hidden="true" />
           </Button>
           <h1 className="text-[22px] font-semibold tracking-[-0.4px]">{index ? "Settings" : current.label}</h1>
         </div>

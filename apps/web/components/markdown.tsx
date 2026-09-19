@@ -72,7 +72,7 @@ function BlockView({ block }: { block: Block }) {
       );
     case "code":
       return (
-        <pre className="overflow-x-auto rounded-lg bg-foreground/90 p-3 font-mono text-[12px] leading-5 text-background dark:bg-black/40">
+        <pre className="overflow-x-auto rounded-lg border bg-background p-3 font-mono text-[12px] leading-5 text-foreground">
           <code>{block.text}</code>
         </pre>
       );
