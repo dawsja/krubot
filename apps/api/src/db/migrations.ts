@@ -395,6 +395,14 @@ const MIGRATIONS: string[] = [
     updated_at TEXT NOT NULL
   );
   `,
+
+  /*
+   * A secret request can now fill the person's Composio project key instead
+   * of the secret store, so a bot can set it up from the conversation.
+   */
+  `
+  ALTER TABLE kru_secret_requests ADD COLUMN target TEXT NOT NULL DEFAULT 'secret';
+  `,
 ];
 
 export function runMigrations(db: Database) {

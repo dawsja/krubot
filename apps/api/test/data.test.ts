@@ -618,7 +618,7 @@ describe("data", () => {
   test("another person's bots keep to their own team, apps, servers and secrets", async () => {
     await seedUsers(["u-admin", "admin"], ["u-other", "user"]);
     const { createBot, listBots } = await import("../src/data/bots.ts");
-    const { getThread, postMessage } = await import("../src/data/threads.ts");
+    const { getThread, listMessages, postMessage } = await import("../src/data/threads.ts");
     const { getConnection, listConnections, saveConnection } = await import("../src/data/settings.ts");
     const { createMcpServer, deleteMcpServer, mcpProxyToken } = await import("../src/data/mcp.ts");
     const { allSecretValues, injectSecrets, listSecrets, setSecret } = await import("../src/data/secrets.ts");
@@ -663,9 +663,26 @@ describe("data", () => {
       expect(system).not.toContain("Dylan");
       expect(system).not.toContain("Gmail");
 
-      // Their bot connects apps in their own Composio project, once they add a key.
+      /*
+       * Their bot asks for the Composio key with the masked card rather than
+       * sending them to Settings: the card lands before the tool waits, the
+       * value goes straight to their own project key, and the bot only hears
+       * that it worked.
+       */
       const context = { box: config, bot: comet, thread, message: { depth: 0 } as never, askBot: async () => "", syncSoul: async () => undefined };
-      expect(String(await baseTools(context).connect_app!.execute({ app: "gmail" }, "c"))).toContain("Composio API key");
+      const { secretsRoutes } = await import("../src/routes/secrets.ts");
+      const asking = baseTools(context).set_composio_key!.execute({ reason: "to connect your Gmail" }, "c");
+      const card = listMessages(thread.id).find((m) => m.kind === "secret" && m.body.startsWith("COMPOSIO_API_KEY"))!;
+      expect(card.approvalId).toBeTruthy();
+      const secrets = asPerson(new Hono(), "u-other").route("/api", secretsRoutes());
+      expect((await secrets.request(`/api/secret-requests/${card.approvalId}`, { method: "POST", body: JSON.stringify({ value: "ak_from_card" }) })).status).toBe(200);
+      expect(String(await asking)).toContain("Connected apps are on");
+      expect(composioKeySource("u-other")).toBe("own");
+      // The key is write-only and redacted from anything a bot writes, like any secret.
+      expect(allSecretValues()).toContain("ak_from_card");
+      expect(String(await baseTools(context).set_composio_key!.execute({}, "c"))).toContain("already in place");
+      const { clearComposioKey } = await import("../src/data/composio-keys.ts");
+      clearComposioKey("u-other");
       const previous = process.env.COMPOSIO_API_KEY;
       process.env.COMPOSIO_API_KEY = "server-key";
       try {

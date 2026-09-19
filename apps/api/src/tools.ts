@@ -1,4 +1,4 @@
-import { APP_CATALOG, BOT_COLORS, BOT_EXPRESSIONS, MAX_ATTACHMENT_BYTES, botInputSchema, handleOf, mcpToolkit, mediaTypeFor, mcpServerInputSchema, pickBotName, type Bot, type BotExpression, type McpServer, type Message, type Thread } from "@krubot/shared";
+import { APP_CATALOG, BOT_COLORS, BOT_EXPRESSIONS, MAX_ATTACHMENT_BYTES, botInputSchema, composioCard, handleOf, mcpToolkit, mediaTypeFor, mcpServerInputSchema, pickBotName, type Bot, type BotExpression, type McpServer, type Message, type Thread } from "@krubot/shared";
 import { requestApproval, summarize } from "./approvals.ts";
 import { readBoxFile, readBoxFileBytes, writeBoxFile, type BoxConfig } from "./box.ts";
 import { availableToolkits, composioConfigured, executeAction, isReadOnlyAction, startConnection, toolsFor, type ComposioTool } from "./composio.ts";
@@ -47,8 +47,8 @@ export const TOOL_NOTES = [
   "Connected-app tools (names starting with the app, like GMAIL_SEND_EMAIL) act on the person's real accounts. Reads go through; writes may wait for the person's approval. Say what you sent, created or changed.",
   "team_memory_update replaces the team memory (its path is in the Team memory section), shared by every bot of the person. Keep it to what the whole team needs.",
   "use_skill returns a skill's full instructions by slug; save_skill adds a new one to the library (name, one-line description, Markdown instructions: steps, decision rules, expected output, what to check with the person first). Every teammate gets it at once.",
-  "connect_app connects one of the person's own apps (in their Composio project): it checks whether Kru can connect it through Composio (then starts it and posts the sign-in link). When the app isn't there but has an MCP server, use add_mcp_server with its URL (from the person, or its official docs; never guess one): it asks the person to approve, adds the server and gives it to you, and posts a Sign in card when the server needs one. Its tools reach you on your next reply; the person gives it to other bots in their profiles.",
-  "request_secret asks the person for a secret by name (like STRIPE_API_KEY) with a reason; the value is stored for injection and you never see it. list_secrets shows the names that exist.",
+  "connect_app connects one of the person's own apps (in their Composio project): it checks whether Kru can connect it through Composio, asks for their Composio key with a masked card when there isn't one yet (set_composio_key does that on its own), and posts a Connect card they tap to sign in. When the app isn't there but has an MCP server, use add_mcp_server with its URL (from the person, or its official docs; never guess one): it asks the person to approve, adds the server and gives it to you, and posts a Sign in card when the server needs one. Its tools reach you on your next reply; the person gives it to other bots in their profiles.",
+  "request_secret asks the person for a secret by name (like STRIPE_API_KEY) with a reason; the value is stored for injection and you never see it. list_secrets shows the names that exist. set_composio_key asks for their Composio API key the same way and turns connected apps on; never ask for either as plain text in the conversation.",
 ].join("\n");
 
 export const CHIEF_TOOL_NOTES = [
@@ -152,6 +152,24 @@ export function baseTools(context: Context): Record<string, DriverTool> {
   const postSignInCard = (server: McpServer) => {
     const recent = recentMessages(thread.id, 30).some((m) => m.kind === "signin" && m.approvalId === server.id && Date.now() - Date.parse(m.createdAt) < SIGNIN_CARD_FRESH_MS);
     if (!recent) postMessage({ threadId: thread.id, author: bot.id, kind: "signin", body: `Sign in to ${server.name}`, approvalId: server.id, depth, answered: true });
+  };
+  /*
+   * A connected app's sign-in is a card too, not a link in the text: the
+   * card asks the API for a fresh Connect Link when the person taps it, so
+   * nothing expires while the message sits there, and it follows the
+   * connection's state live.
+   */
+  const postConnectCard = (app: { toolkit: string; name: string }) => {
+    const id = composioCard(app.toolkit);
+    const recent = recentMessages(thread.id, 30).some((m) => m.kind === "signin" && m.approvalId === id && Date.now() - Date.parse(m.createdAt) < SIGNIN_CARD_FRESH_MS);
+    if (!recent) postMessage({ threadId: thread.id, author: bot.id, kind: "signin", body: `Connect ${app.name}`, approvalId: id, depth, answered: true });
+  };
+  /** Asks for the person's Composio key with the masked card. Returns what to say when it didn't arrive. */
+  const askComposioKey = async (reason: string): Promise<string | null> => {
+    const status = await requestSecret({ bot, threadId: thread.id, name: "COMPOSIO_API_KEY", reason, target: "composio" });
+    if (status === "given" || status === "exists") return null;
+    if (status === "declined") return "The person declined to give their Composio API key, so connected apps stay off. Say what you can do without them.";
+    return "Nobody gave the Composio API key in time. Say so; they can also add it under Settings → Apps.";
   };
   return {
     set_profile: {
@@ -292,6 +310,16 @@ export function baseTools(context: Context): Record<string, DriverTool> {
         return `Nobody gave ${name} in time. Say so and stop, or ask again later.`;
       },
     },
+    set_composio_key: {
+      description: "Ask the person for their Composio API key and store it as their Composio project key, which turns on connected apps (Gmail, Slack, Notion and the rest). A masked card asks for it; you never see the value. Use this when they have no key yet and want their apps connected.",
+      inputSchema: schema({ reason: { type: "string", description: "What they asked for, in one line, like 'to connect your Gmail'." } }),
+      execute: async (input) => {
+        if (composioConfigured(bot.userId)) return "A Composio key is already in place. Connect an app with connect_app.";
+        const failed = await askComposioKey(String(input.reason ?? "").trim().slice(0, 200) || "to connect your apps");
+        if (failed) return failed;
+        return "Stored. Connected apps are on. Connect one with connect_app; a free key comes from platform.composio.dev if they need another.";
+      },
+    },
     list_secrets: {
       description: "The names of the stored secrets (never their values).",
       inputSchema: schema({}),
@@ -317,17 +345,12 @@ export function baseTools(context: Context): Record<string, DriverTool> {
         const catalog = await availableToolkits(bot.userId).catch(() => APP_CATALOG);
         const entry = catalog.find((a) => squash(a.toolkit) === squash(wanted) || squash(a.name) === squash(wanted) || squash(a.name).includes(squash(wanted)));
         if (entry) {
-          if (!composioConfigured(bot.userId)) return `${entry.name} can be connected through Composio, but the person hasn't added their Composio API key yet. Ask them to add it under Settings → Apps → Composio (a free key from composio.dev), then connect ${entry.name} there.`;
-          try {
-            const started = await startConnection(bot.userId, entry.toolkit);
-            if (started.redirectUrl) {
-              postMessage({ threadId: thread.id, author: bot.id, body: `To connect ${entry.name}, sign in here: ${started.redirectUrl}`, depth, answered: true });
-              return `Started. The sign-in link for ${entry.name} is posted in the conversation; once the person finishes, ask them to add ${entry.name} to your profile so you get its tools.`;
-            }
-            return `${entry.name} is connected. Ask the person to add it to your profile (Settings → the bot → Connected apps).`;
-          } catch (error) {
-            return `Could not start the ${entry.name} connection: ${error instanceof Error ? error.message : "error"}. The person can try under Settings → Apps → Connected apps.`;
+          if (!composioConfigured(bot.userId)) {
+            const key = await askComposioKey(`to connect ${entry.name} and your other apps`);
+            if (key) return key;
           }
+          postConnectCard(entry);
+          return `A Connect card for ${entry.name} is in the conversation; the person taps it to sign in to ${entry.name}. Once they do, ask them to add ${entry.name} to your profile (Settings → the bot → Connected apps) so you get its tools.`;
         }
         return `${wanted} isn't among the apps Kru can connect through Composio. If it offers an MCP server, add it with add_mcp_server and its URL (the one the person gave you, or from the app's official docs; don't guess). A server that runs as a command goes under Settings → Apps → MCP servers instead. If it has neither, use the browser on the computer.`;
       },

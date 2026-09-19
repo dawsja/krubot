@@ -71,15 +71,17 @@ export function injectSecrets(text: string, userId: string, missing?: (name: str
 
 // ---------- requests from bots ----------
 
-type RequestRow = { id: string; bot_id: string; thread_id: string; name: string; reason: string; status: SecretRequest["status"]; created_at: string; resolved_at: string | null };
+type RequestRow = { id: string; bot_id: string; thread_id: string; name: string; reason: string; target: SecretRequest["target"] | null; status: SecretRequest["status"]; created_at: string; resolved_at: string | null };
 
 function toRequest(row: RequestRow): SecretRequest {
-  return { id: row.id, botId: row.bot_id, threadId: row.thread_id, name: row.name, reason: row.reason, status: row.status, createdAt: row.created_at, resolvedAt: row.resolved_at };
+  return { id: row.id, botId: row.bot_id, threadId: row.thread_id, name: row.name, reason: row.reason, target: row.target ?? "secret", status: row.status, createdAt: row.created_at, resolvedAt: row.resolved_at };
 }
 
-export function createSecretRequest(input: { botId: string; threadId: string; name: string; reason: string }): SecretRequest {
+export function createSecretRequest(input: { botId: string; threadId: string; name: string; reason: string; target?: SecretRequest["target"] }): SecretRequest {
   const id = newId("sr");
-  ensureKruDatabase().query("INSERT INTO kru_secret_requests (id, bot_id, thread_id, name, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)").run(id, input.botId, input.threadId, input.name, input.reason, now());
+  ensureKruDatabase()
+    .query("INSERT INTO kru_secret_requests (id, bot_id, thread_id, name, reason, target, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)")
+    .run(id, input.botId, input.threadId, input.name, input.reason, input.target ?? "secret", now());
   return getSecretRequest(id)!;
 }
 

@@ -114,6 +114,11 @@ what is here. The README says what Kru Bot is; this says how it is made.
   there rather than polling from a component.
 - **Mascots come from the kru-bot skill** (`components/hq/kru-bot.tsx`),
   copied 1:1. Don't redraw the flame.
+- **A bot's message is light Markdown** (`lib/markdown.ts`), and a bare URL
+  is a link too: agents write them as plain text far more often than as
+  `[text](url)`. Anything a person has to act on (a sign-in, a key) is a
+  card, not a link: `secret-card.tsx`, `signin-card.tsx` and
+  `connect-card.tsx` are the three, all answered from the conversation.
 - **Settings is sections, not a scroll.** `SETTINGS_SECTIONS` in
   `lib/settings-sections.ts` is the list (account, team, ai, computer,
   skills, apps, secrets, auth), each marked `admin` or not; the route
@@ -146,9 +151,11 @@ what is here. The README says what Kru Bot is; this says how it is made.
   reads the Claude sign-in and never sends connected-app credentials to
   the box; app actions run through Composio in the API.
 - **Connected apps are each person's own** (`src/composio.ts`). Everyone
-  sets their own Composio project key in Settings → Apps
-  (`src/data/composio-keys.ts`, encrypted and write-only like a provider
-  key); the admin falls back to `COMPOSIO_API_KEY`, nobody else does.
+  sets their own Composio project key in Settings → Apps, or gives it to a
+  bot that asks with `set_composio_key` (`src/data/composio-keys.ts`,
+  encrypted and write-only like a provider key; both paths go through
+  `applyComposioKey`, which forgets what the old key connected); the admin
+  falls back to `COMPOSIO_API_KEY`, nobody else does.
   Connections are rows per user, and every Composio call takes the
   person's id: `toolsFor`, `executeAction` and `startConnection` run on
   that person's key and their own connection, never anyone else's. A new
@@ -176,7 +183,10 @@ what is here. The README says what Kru Bot is; this says how it is made.
   value goes to the box, and every bot reply and activity line passes
   through `createRedactor(allSecretValues())`. A bot asks with
   `request_secret` (a `secret` message kind, answered on
-  `/api/secret-requests/:id`); it only ever hears "stored".
+  `/api/secret-requests/:id`); it only ever hears "stored". A request's
+  `target` says where the value lands: the secret store, or the person's
+  Composio key when the bot asked with `set_composio_key`. Never tell a
+  person to paste a key into Settings that a bot could ask for.
 - **Skills are one library** (`src/data/skills.ts`), mirrored to the box
   at `~/.skills/<slug>/SKILL.md` by `src/skills.ts`. The system prompt
   carries the index; a `/slug` in the message puts that skill in full. A
@@ -210,6 +220,11 @@ what is here. The README says what Kru Bot is; this says how it is made.
   an HTTP URL only (commands stay in Settings), asks the person's approval,
   and posts a `signin` card when the server wants OAuth; the card's sign-in
   comes back to that conversation and a hidden prompt lets the bot carry on.
+  A connected app's sign-in is a `signin` card too, with `composio:<toolkit>`
+  as its id (`composioCard` in `packages/shared`): the card asks for a fresh
+  Connect Link when the person taps it, so nothing expires in the message,
+  and the connection comes back to the conversation. A bot never pastes a
+  sign-in link into a reply.
 - A hidden `prompt` message (author `system`) is how the API asks a bot to
   do something on its own, like greeting a new person; the dispatcher
   answers it like a message and the web never renders it.

@@ -40,6 +40,8 @@ export function SecretCard({ message, bot }: { message: Message; bot: Bot | unde
   const [name, ...reasonParts] = message.body.split(": ");
   const reason = reasonParts.join(": ");
   const status = request?.status ?? "pending";
+  // A Composio key turns on connected apps rather than being injected somewhere.
+  const composio = request?.target === "composio";
 
   async function answer(event?: FormEvent, decline = false) {
     event?.preventDefault();
@@ -62,12 +64,21 @@ export function SecretCard({ message, bot }: { message: Message; bot: Bot | unde
       <BubbleContent className="flex flex-col gap-2 border-amber/40 bg-amber/10 p-3">
         <p className="flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
           <KeyRound className="size-3.5" aria-hidden="true" />
-          {bot?.name ?? "A bot"} needs a secret
+          {bot?.name ?? "A bot"} needs {composio ? "your Composio key" : "a secret"}
         </p>
         <p className="text-[13.5px]">
-          <span className="font-mono font-medium">{name}</span>
+          <span className={composio ? "font-medium" : "font-mono font-medium"}>{composio ? "Composio API key" : name}</span>
           {reason ? <span className="text-muted-foreground"> · {reason}</span> : null}
         </p>
+        {composio && status === "pending" ? (
+          <p className="text-[12.5px] text-muted-foreground">
+            It connects your apps (Gmail, Slack, Notion and the rest). A free key comes from{" "}
+            <a href="https://platform.composio.dev" target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
+              platform.composio.dev
+            </a>{" "}
+            under Settings → API keys.
+          </p>
+        ) : null}
         {status === "pending" ? (
           <form onSubmit={answer} className="flex flex-col gap-2">
             <Field>
@@ -86,10 +97,10 @@ export function SecretCard({ message, bot }: { message: Message; bot: Bot | unde
                 Decline
               </Button>
             </div>
-            <p className="text-[11.5px] text-muted-foreground">Stored encrypted by the API and filled in where it&apos;s used. The bot never sees the value.</p>
+            <p className="text-[11.5px] text-muted-foreground">{composio ? "Stored encrypted by the API and used only when it talks to Composio. The bot never sees the value." : "Stored encrypted by the API and filled in where it’s used. The bot never sees the value."}</p>
           </form>
         ) : (
-          <p className="text-[12px] text-muted-foreground">{status === "given" ? "Stored. The bot was told it's there." : status === "declined" ? "Declined." : "Nobody answered in time."}</p>
+          <p className="text-[12px] text-muted-foreground">{status === "given" ? (composio ? "Stored. Connected apps are on." : "Stored. The bot was told it's there.") : status === "declined" ? "Declined." : "Nobody answered in time."}</p>
         )}
       </BubbleContent>
     </Bubble>

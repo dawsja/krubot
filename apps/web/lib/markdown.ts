@@ -22,21 +22,49 @@ export type Block =
   | { kind: "code"; lang: string; text: string }
   | { kind: "rule" };
 
+/*
+ * The last alternative is a bare URL: agents write links as plain text far
+ * more often than as [text](url), and a sign-in link nobody can tap is no
+ * link at all.
+ */
 const INLINE =
-  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\*\*(?=\S)([\s\S]*?\S)\*\*|__(?=\S)([\s\S]*?\S)__|(?<![\w*])\*(?=[^*\s])([^*\n]*?[^*\s])\*(?![\w*])|(?<![\w_])_(?=[^_\s])([^_\n]*?[^_\s])_(?![\w_])|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\*\*(?=\S)([\s\S]*?\S)\*\*|__(?=\S)([\s\S]*?\S)__|(?<![\w*])\*(?=[^*\s])([^*\n]*?[^*\s])\*(?![\w*])|(?<![\w_])_(?=[^_\s])([^_\n]*?[^_\s])_(?![\w_])|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>`\]]+)/g;
+
+const count = (text: string, char: string) => text.split(char).length - 1;
+
+/**
+ * A bare URL at the end of a sentence shouldn't swallow the full stop, and
+ * one inside brackets shouldn't swallow the closing one. A closing bracket
+ * the URL opened itself stays (Wikipedia's are like that).
+ */
+function trimUrl(url: string): string {
+  let out = url;
+  for (;;) {
+    const end = out.at(-1) ?? "";
+    if (".,;:!?'\"".includes(end)) out = out.slice(0, -1);
+    else if (end === ")" && count(out, ")") > count(out, "(")) out = out.slice(0, -1);
+    else return out;
+  }
+}
 
 export function parseInline(text: string): Inline[] {
   const out: Inline[] = [];
   let last = 0;
   for (const match of text.matchAll(INLINE)) {
     const index = match.index ?? 0;
+    if (index < last) continue;
     if (index > last) out.push({ kind: "text", text: text.slice(last, index) });
-    const [, ticks, code, bold1, bold2, italic1, italic2, linkText, href] = match;
+    const [, ticks, code, bold1, bold2, italic1, italic2, linkText, href, bare] = match;
+    let consumed = match[0].length;
     if (ticks) out.push({ kind: "code", text: ticks.length > 1 ? code.trim() : code });
     else if (bold1 ?? bold2) out.push({ kind: "bold", children: parseInline(bold1 ?? bold2) });
     else if (italic1 ?? italic2) out.push({ kind: "italic", children: parseInline(italic1 ?? italic2) });
-    else out.push({ kind: "link", text: linkText, href });
-    last = index + match[0].length;
+    else if (bare) {
+      const url = trimUrl(bare);
+      out.push({ kind: "link", text: url, href: url });
+      consumed = url.length;
+    } else out.push({ kind: "link", text: linkText, href });
+    last = index + consumed;
   }
   if (last < text.length) out.push({ kind: "text", text: text.slice(last) });
   return out;

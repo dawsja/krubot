@@ -1,10 +1,10 @@
 import type { ComposioKeyStatus } from "@krubot/shared";
 import { Hono } from "hono";
-import { userId } from "../access.ts";
+import { ownThread, userId } from "../access.ts";
 import type { Env } from "../app.ts";
 import { appUrl } from "../config.ts";
-import { composioKey, composioKeySource, disconnect, forgetComposioCache, offeredToolkits, refreshConnection, startConnection } from "../composio.ts";
-import { clearComposioKey, setComposioKey } from "../data/composio-keys.ts";
+import { applyComposioKey, composioKey, composioKeySource, disconnect, forgetComposioCache, offeredToolkits, refreshConnection, startConnection } from "../composio.ts";
+import { clearComposioKey } from "../data/composio-keys.ts";
 import { listConnections, removeConnections } from "../data/settings.ts";
 
 /*
@@ -13,6 +13,7 @@ import { listConnections, removeConnections } from "../data/settings.ts";
  * to. Nobody sees or uses anyone else's.
  */
 
+/** Clearing the key forgets what it connected; storing one goes through applyComposioKey. */
 function keyChanged(me: string, before: string | null) {
   if (composioKey(me) === before) return;
   removeConnections(me);
@@ -31,13 +32,11 @@ export function connectionsRoutes() {
     const body = (await c.req.json().catch(() => ({}))) as { apiKey?: unknown };
     if (typeof body.apiKey !== "string" || !body.apiKey.trim()) return c.json({ error: "Paste your Composio API key" }, 400);
     const me = userId(c);
-    const before = composioKey(me);
     try {
-      setComposioKey(me, body.apiKey);
+      applyComposioKey(me, body.apiKey);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : "Could not save the key" }, 400);
     }
-    keyChanged(me, before);
     return c.json({ source: composioKeySource(me) } satisfies ComposioKeyStatus);
   });
 
@@ -49,11 +48,14 @@ export function connectionsRoutes() {
     return c.json({ source: composioKeySource(me) } satisfies ComposioKeyStatus);
   });
 
+  /** `threadId` brings the person back to the conversation the bot asked from. */
   app.post("/connections/:toolkit/connect", async (c) => {
     const toolkit = c.req.param("toolkit").toLowerCase();
     if (!offeredToolkits().some((a) => a.toolkit === toolkit)) return c.json({ error: "That app isn't in the catalog" }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as { threadId?: unknown };
+    const thread = typeof body.threadId === "string" && ownThread(c, body.threadId) ? body.threadId : null;
     try {
-      return c.json(await startConnection(userId(c), toolkit));
+      return c.json(await startConnection(userId(c), toolkit, thread));
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : "Could not start the connection" }, 502);
     }
@@ -64,11 +66,13 @@ export function connectionsRoutes() {
     return connection ? c.json({ connection }) : c.json({ error: "Not connected" }, 404);
   });
 
-  /** Where Composio sends the browser back after OAuth. */
+  /** Where Composio sends the browser back after OAuth; to the conversation it started from, else Settings. */
   app.get("/connections/callback", async (c) => {
     const toolkit = (c.req.query("toolkit") ?? "").toLowerCase();
     if (toolkit) await refreshConnection(userId(c), toolkit);
-    return c.redirect(`${appUrl()}/app/settings/apps?connected=${encodeURIComponent(toolkit)}`);
+    const thread = c.req.query("thread") ?? "";
+    const where = thread && ownThread(c, thread) ? `/app/t/${thread}` : "/app/settings/apps";
+    return c.redirect(`${appUrl()}${where}?connected=${encodeURIComponent(toolkit)}`);
   });
 
   app.delete("/connections/:toolkit", async (c) => ((await disconnect(userId(c), c.req.param("toolkit").toLowerCase())) ? c.body(null, 204) : c.json({ error: "Not connected" }, 404)));

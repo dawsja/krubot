@@ -795,6 +795,21 @@ export function mcpToolkit(serverId: string): string {
 }
 
 /**
+ * A `signin` card names what it signs in to: an MCP server by its id, or a
+ * connected app as `composio:<toolkit>`. The card asks the API for a fresh
+ * Connect Link when the person taps it, so nothing expires in the message.
+ */
+export const COMPOSIO_CARD = "composio:";
+
+export function composioCard(toolkit: string): string {
+  return `${COMPOSIO_CARD}${toolkit}`;
+}
+
+export function composioCardToolkit(id: string | null | undefined): string | null {
+  return id?.startsWith(COMPOSIO_CARD) ? id.slice(COMPOSIO_CARD.length) : null;
+}
+
+/**
  * Where an OAuth sign-in returns. `app`: this Kru Bot's own address.
  * `localhost`: MCP_LOOPBACK_CALLBACK, for providers that only let local
  * tools and a few partners sign in (Robinhood's Trading MCP). The desktop
@@ -865,6 +880,12 @@ export type SecretRequest = {
   threadId: string;
   name: string;
   reason: string;
+  /**
+   * Where the value goes when the person types it in: the secret store, or
+   * the person's own Composio project key. Either way it is encrypted by
+   * the API at once and no bot ever sees it.
+   */
+  target: "secret" | "composio";
   status: "pending" | "given" | "declined" | "expired";
   createdAt: string;
   resolvedAt: string | null;

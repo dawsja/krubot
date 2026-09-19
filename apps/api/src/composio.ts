@@ -1,8 +1,8 @@
 import type { Composio } from "@composio/core";
 import { APP_CATALOG, appLogoUrl, type AppCatalogEntry, type Connection } from "@krubot/shared";
 import { appUrl } from "./config.ts";
-import { readComposioKey } from "./data/composio-keys.ts";
-import { getConnection, listConnections, removeConnection, saveConnection } from "./data/settings.ts";
+import { readComposioKey, setComposioKey } from "./data/composio-keys.ts";
+import { getConnection, listConnections, removeConnection, removeConnections, saveConnection } from "./data/settings.ts";
 import { getUser, isAdmin } from "./data/users.ts";
 
 /*
@@ -58,6 +58,19 @@ export function composioKey(userId: string): string | null {
 
 export function composioConfigured(userId: string) {
   return composioKeySource(userId) !== null;
+}
+
+/**
+ * Stores a person's own Composio key. A key for a different project can't
+ * see what the old one connected, so those connections are forgotten. The
+ * settings route and a bot's request both come through here.
+ */
+export function applyComposioKey(userId: string, apiKey: string) {
+  const before = composioKey(userId);
+  setComposioKey(userId, apiKey);
+  if (composioKey(userId) === before) return;
+  removeConnections(userId);
+  forgetComposioCache(userId);
 }
 
 async function sdk(userId: string): Promise<Composio> {
@@ -138,7 +151,7 @@ async function authConfigFor(client: Composio, toolkit: string): Promise<string>
  * browser, landing back on /api/connections/callback. An account that is
  * already active for this person is reused instead.
  */
-export async function startConnection(userId: string, toolkit: string): Promise<{ redirectUrl: string | null; accountId: string }> {
+export async function startConnection(userId: string, toolkit: string, threadId?: string | null): Promise<{ redirectUrl: string | null; accountId: string }> {
   const client = await sdk(userId);
   const authConfigId = await authConfigFor(client, toolkit);
   const active = await client.connectedAccounts.list({ userIds: [composioUserId(userId)], authConfigIds: [authConfigId], statuses: ["ACTIVE"] });
@@ -147,7 +160,7 @@ export async function startConnection(userId: string, toolkit: string): Promise<
     saveConnection(userId, { toolkit, name: nameOf(toolkit), accountId: current.id, status: "active" });
     return { redirectUrl: null, accountId: current.id };
   }
-  const callbackUrl = `${appUrl()}/api/connections/callback?toolkit=${encodeURIComponent(toolkit)}`;
+  const callbackUrl = `${appUrl()}/api/connections/callback?toolkit=${encodeURIComponent(toolkit)}${threadId ? `&thread=${encodeURIComponent(threadId)}` : ""}`;
   const request = await client.connectedAccounts.link(composioUserId(userId), authConfigId, { callbackUrl });
   saveConnection(userId, { toolkit, name: nameOf(toolkit), accountId: request.id, status: request.redirectUrl ? "pending" : statusOf(request.status ?? "") });
   return { redirectUrl: request.redirectUrl ?? null, accountId: request.id };

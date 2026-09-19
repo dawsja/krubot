@@ -1,6 +1,7 @@
 import { SECRET_NAME } from "@krubot/shared";
 import { Hono } from "hono";
 import { ownThread, userId } from "../access.ts";
+import { applyComposioKey } from "../composio.ts";
 import type { Env } from "../app.ts";
 import { deleteSecret, getSecretRequest, listSecrets, resolveSecretRequest, setSecret } from "../data/secrets.ts";
 import { answerSecretRequest } from "../secret-requests.ts";
@@ -43,7 +44,8 @@ export function secretsRoutes() {
     const body = (await c.req.json().catch(() => ({}))) as { value?: string; decline?: boolean };
     if (body.decline) return c.json({ request: answerSecretRequest(request.id, "declined") });
     try {
-      setSecret(userId(c), request.name, String(body.value ?? ""), request.botId);
+      if (request.target === "composio") applyComposioKey(userId(c), String(body.value ?? ""));
+      else setSecret(userId(c), request.name, String(body.value ?? ""), request.botId);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : "Could not save" }, 400);
     }

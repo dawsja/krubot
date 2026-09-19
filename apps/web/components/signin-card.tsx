@@ -1,8 +1,9 @@
 "use client";
 
-import type { Bot, McpServer, Message } from "@krubot/shared";
+import { composioCardToolkit, type Bot, type McpServer, type Message } from "@krubot/shared";
 import { Check, LogIn, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ConnectCard } from "@/components/connect-card";
 import { useLiveEvents } from "@/components/hq/live-events";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -13,9 +14,16 @@ import { api } from "@/lib/api";
 /**
  * A bot added an MCP server that wants the person signed in. The button
  * runs the server's OAuth sign-in and comes back to this conversation; the
- * card follows the server's sign-in state live.
+ * card follows the server's sign-in state live. A card for a connected app
+ * (`composio:<toolkit>`) is the same idea, drawn by ConnectCard.
  */
 export function SignInCard({ message, bot }: { message: Message; bot: Bot | undefined }) {
+  const toolkit = composioCardToolkit(message.approvalId);
+  if (toolkit) return <ConnectCard message={message} bot={bot} toolkit={toolkit} />;
+  return <McpSignInCard message={message} bot={bot} />;
+}
+
+function McpSignInCard({ message, bot }: { message: Message; bot: Bot | undefined }) {
   const id = message.approvalId;
   const [server, setServer] = useState<McpServer | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
