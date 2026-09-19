@@ -1,7 +1,7 @@
 "use client";
 
 import type { AppCatalogEntry, BoxStatus, Connection, Settings } from "@krubot/shared";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -26,6 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PersonAvatar } from "@/components/bot-avatar";
+import { useSignOut } from "@/components/profile-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
@@ -44,6 +45,7 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
   const [configured, setConfigured] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
   const current = SETTINGS_SECTIONS.find((s) => s.id === section) ?? SETTINGS_SECTIONS[0];
+  const signOut = useSignOut();
   // On a phone the sections are a row that scrolls; keep the open one in view.
   const activeLink = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
@@ -128,6 +130,13 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
           </Link>
         );
       })}
+      {/* Sign out ends the list: on a phone your picture opens Settings directly, there is no menu. */}
+      <button type="button" onClick={() => void signOut()} className="mt-4 flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 text-left outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50">
+        <span className="flex size-9 items-center justify-center rounded-full bg-muted text-foreground">
+          <LogOut className="size-4" aria-hidden="true" />
+        </span>
+        <span className="block text-[15px] font-medium">Sign out</span>
+      </button>
     </nav>
   );
 

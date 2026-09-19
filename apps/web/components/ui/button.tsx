@@ -7,8 +7,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        /* The primary is ink (see globals.css): one colour for the main action in either theme. */
-        default: "bg-primary text-primary-foreground hover:bg-primary/85 aria-expanded:bg-primary/85",
+        /* The primary is ink in the light and a grey in the dark (see globals.css): one colour for the main action. */
+        default: "border-primary-edge bg-primary text-primary-foreground hover:bg-primary/85 aria-expanded:bg-primary/85",
         outline:
           "border-border bg-card hover:border-ash hover:bg-card hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-card dark:hover:bg-input/50",
         secondary:
@@ -32,6 +32,8 @@ const buttonVariants = cva(
         "icon-sm":
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
+        /* A touch target: the circles on the phone's Chats screen. */
+        "icon-xl": "size-11 [&_svg:not([class*='size-'])]:size-5",
       },
     },
     defaultVariants: {
