@@ -231,7 +231,8 @@
   --foreground: var(--carbon);
   --card: var(--paper-white);
   --card-foreground: var(--carbon);
-  --popover: var(--paper-white);
+  /* A menu floats above the cards, so it is a step lighter than them. */
+  --popover: #232327;
   --popover-foreground: var(--carbon);
   /*
    * In the dark the primary is a grey, not white: buttons, the + and

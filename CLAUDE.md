@@ -71,10 +71,13 @@ what is here. The README says what Kru Bot is; this says how it is made.
 - **Phones first, one screen at a time.** Under `md` the app is a
   messaging app: `/app` is the Chats screen (`chats-screen.tsx`, the same
   list the sidebar draws: your picture top left opens Settings, Search and
-  New are circles top right, Search swaps in the field), a conversation is a full screen with a back
-  chevron, an Info button that opens the details sheet (the right panel's
-  content) and a menu with the bot's actions (`thread-actions.tsx`, shared
-  with the sidebar's long-press menu). There is no bottom bar: the app
+  New are circles top right, Search swaps in the field), a conversation is a full screen with floating
+  pills over the page: a back chevron, the bot (tap it for the details
+  sheet, the right panel's content) and a menu with the bot's actions
+  (`thread-actions.tsx`, shared with the sidebar's long-press menu; under
+  `pointer-coarse:` menus are large rounded cards). The composer is an
+  attach circle beside a pill that holds the text and the send button, on
+  every screen size. There is no bottom bar: the app
   opens on Chats, Settings is behind your picture (with Open the computer
   as a row for the admin), and every screen goes back with its chevron or
   a swipe in from the left edge (`hooks/use-swipe-back.ts`).

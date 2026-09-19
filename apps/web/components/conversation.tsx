@@ -1,7 +1,7 @@
 "use client";
 
 import { handleOf, type Approval, type Bot, type Message, type Thread } from "@krubot/shared";
-import { Bot as BotIcon, ChevronLeft, Clock, Download, EllipsisVertical, FileText, Info, PanelRight, Paperclip, SendHorizonal, Square, Users, X } from "lucide-react";
+import { Bot as BotIcon, ChevronLeft, Clock, Download, EllipsisVertical, FileText, PanelRight, Paperclip, Plus, SendHorizonal, Square, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
@@ -446,20 +446,23 @@ export function Conversation({ threadId }: { threadId: string }) {
   return (
     <div className="flex min-h-0 flex-1">
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-1 border-b bg-background px-2 pt-[env(safe-area-inset-top)] sm:gap-2 sm:px-4">
-          <Button variant="ghost" size="icon-lg" aria-label="Back to chats" render={<Link href="/app" />} nativeButton={false} className="wide:hidden">
-            <ChevronLeft aria-hidden="true" className="size-5" />
+        {/* Floating pills on the page, no bar: back, the bot (tap for its details), and its actions. */}
+        <header className="flex h-[calc(64px+env(safe-area-inset-top))] shrink-0 items-center gap-2 px-3 pt-[env(safe-area-inset-top)] sm:px-4">
+          <Button size="icon-xl" aria-label="Back to chats" render={<Link href="/app" />} nativeButton={false} className="wide:hidden">
+            <ChevronLeft aria-hidden="true" />
           </Button>
-          <button type="button" onClick={() => setDetails(true)} className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-1 py-1 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 xwide:pointer-events-none" aria-label="Details">
-          {bot ? <BotAvatar bot={bot} size={32} /> : null}
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[15px] leading-5 font-semibold">{info?.thread.name ?? "…"}</h1>
-            <p className={cn("truncate text-[12px] leading-4 text-muted-foreground", (busy || boxUpdating) && "shimmer")}>
-              {bot ? bot.title || "Teammate" : info ? `${info.thread.members.length} bots` : ""}
-              {boxUpdating ? " · the computer is updating, replies wait" : busy ? " · working" : ""}
-            </p>
-          </div>
-          </button>
+          <h1 className="sr-only">{info?.thread.name ?? "Conversation"}</h1>
+          <Button size="xl" onClick={() => setDetails(true)} aria-label="Details" className="min-w-0 max-w-full gap-2 pl-1.5 text-left xwide:pointer-events-none">
+            {bot ? <BotAvatar bot={bot} size={32} /> : <Users className="ml-2 size-5" aria-hidden="true" />}
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-[15px] leading-5 font-semibold">{info?.thread.name ?? "…"}</span>
+              <span className={cn("truncate text-[11px] leading-3.5 font-normal opacity-70", (busy || boxUpdating) && "shimmer")}>
+                {bot ? bot.title || "Teammate" : info ? `${info.thread.members.length} bots` : ""}
+                {boxUpdating ? " · the computer is updating, replies wait" : busy ? " · working" : ""}
+              </span>
+            </span>
+          </Button>
+          <span className="flex-1" />
           {busy ? (
             <Button variant="outline" size="sm" onClick={() => void post(`/api/threads/${threadId}/interrupt`)}>
               <Square className="fill-current" data-icon="inline-start" aria-hidden="true" />
@@ -467,18 +470,15 @@ export function Conversation({ threadId }: { threadId: string }) {
             </Button>
           ) : null}
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="icon" aria-label="Toggle details" aria-pressed={panel} onClick={() => setPanel((p) => !p)} className={cn("hidden xwide:inline-flex", panel && "bg-muted")} />}>
+            <TooltipTrigger render={<Button size="icon-xl" aria-label="Toggle details" aria-pressed={panel} onClick={() => setPanel((p) => !p)} className={cn("hidden xwide:inline-flex", panel && "bg-primary/85")} />}>
               <PanelRight aria-hidden="true" />
             </TooltipTrigger>
             <TooltipContent>Details</TooltipContent>
           </Tooltip>
-          <Button variant="ghost" size="icon-lg" aria-label="Details" onClick={() => setDetails(true)} className="xwide:hidden">
-            <Info aria-hidden="true" className="size-5" />
-          </Button>
           {actions.length ? (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-lg" aria-label="More" />}>
-                <EllipsisVertical aria-hidden="true" className="size-5" />
+              <DropdownMenuTrigger render={<Button size="icon-xl" aria-label="More" />}>
+                <EllipsisVertical aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 {actions.map((group, i) => (
@@ -535,7 +535,8 @@ export function Conversation({ threadId }: { threadId: string }) {
           </MessageScroller>
         </MessageScrollerProvider>
 
-        <form onSubmit={send} onDrop={onDrop} onDragOver={(e) => e.preventDefault()} className="shrink-0 border-t bg-background px-3 py-2.5 pb-[max(10px,env(safe-area-inset-bottom))] sm:px-4 sm:py-3">
+        {/* The composer: an attach circle beside a pill that holds the text and the send button. */}
+        <form onSubmit={send} onDrop={onDrop} onDragOver={(e) => e.preventDefault()} className="shrink-0 bg-background px-3 py-2.5 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-4 sm:py-3">
           {members.length ? (
             <div className="mb-2 flex flex-wrap gap-1">
               {members.map((b) => (
@@ -570,9 +571,16 @@ export function Conversation({ threadId }: { threadId: string }) {
               {notice}
             </p>
           ) : null}
-          <div className="relative">
+          <div className="relative flex items-end gap-2">
           {slash ? <SlashMenu kind={slash.kind} skills={skills} bots={bots} query={slash.query} selected={slash.selected} onPickSkill={(skill) => insertSkill(skill.slug)} onPickBot={insertBot} /> : null}
-          <InputGroup className="rounded-2xl">
+          <Tooltip>
+            <TooltipTrigger render={<Button size="icon-xl" aria-label="Attach files" render={<label />} nativeButton={false} className="cursor-pointer" />}>
+              <Plus aria-hidden="true" />
+              <input type="file" multiple className="sr-only" accept="image/*,.pdf,.txt,.md,.csv,.json" onChange={(e) => attach([...(e.target.files ?? [])])} />
+            </TooltipTrigger>
+            <TooltipContent>Attach files</TooltipContent>
+          </Tooltip>
+          <InputGroup className="min-h-11 rounded-[22px] pr-1">
             <InputGroupTextarea
               ref={textarea}
               value={draft}
@@ -587,20 +595,11 @@ export function Conversation({ threadId }: { threadId: string }) {
               placeholder={bot ? `Message ${bot.name}` : "Message the room"}
               aria-label={bot ? `Message ${bot.name}` : "Message the room"}
               enterKeyHint={touch ? "enter" : "send"}
-              className="max-h-40 min-h-10 text-[16px] leading-5 sm:text-[14px]"
+              className="max-h-40 min-h-11 px-4 py-3 text-[16px] leading-5 sm:text-[14px]"
             />
-            <InputGroupAddon align="inline-start" className="self-end pb-1">
+            <InputGroupAddon align="inline-end" className="self-end pr-0 pb-1">
               <Tooltip>
-                <TooltipTrigger render={<InputGroupButton size="icon-sm" aria-label="Attach files" render={<label />} nativeButton={false} className="pointer-coarse:size-9" />}>
-                  <Paperclip aria-hidden="true" />
-                  <input type="file" multiple className="sr-only" accept="image/*,.pdf,.txt,.md,.csv,.json" onChange={(e) => attach([...(e.target.files ?? [])])} />
-                </TooltipTrigger>
-                <TooltipContent>Attach files</TooltipContent>
-              </Tooltip>
-            </InputGroupAddon>
-            <InputGroupAddon align="inline-end" className="self-end pb-1">
-              <Tooltip>
-                <TooltipTrigger render={<InputGroupButton type="submit" size="icon-sm" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="pointer-coarse:size-9" />}>
+                <TooltipTrigger render={<InputGroupButton type="submit" variant="default" size="icon-md" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="rounded-full" />}>
                   <SendHorizonal aria-hidden="true" />
                 </TooltipTrigger>
                 <TooltipContent>{touch ? "Send" : "Send (Enter)"}</TooltipContent>
