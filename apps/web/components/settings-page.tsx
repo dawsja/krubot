@@ -1,7 +1,7 @@
 "use client";
 
 import type { AppCatalogEntry, BoxStatus, Connection, Settings } from "@krubot/shared";
-import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, Monitor } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -19,6 +19,7 @@ import { SkillsCard } from "@/components/skills-card";
 import { UsersCard } from "@/components/users-card";
 import { appName, AppIcon } from "@/components/app-icons";
 import { useLiveEvents } from "@/components/hq/live-events";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 import { useStore } from "@/components/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,9 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
   const [connecting, setConnecting] = useState<string | null>(null);
   const current = SETTINGS_SECTIONS.find((s) => s.id === section) ?? SETTINGS_SECTIONS[0];
   const signOut = useSignOut();
+  // On a phone the list goes back to Chats and a section back to the list.
+  const back = index ? "/app" : "/app/settings";
+  useSwipeBack(back);
   // On a phone the sections are a row that scrolls; keep the open one in view.
   const activeLink = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
@@ -130,6 +134,19 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
           </Link>
         );
       })}
+      {/* The computer is the admin's, a screen of its own: reached from here on a phone, where there is no bar. */}
+      {admin ? (
+        <Link href="/app/computer" className="flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50">
+          <span className="flex size-9 items-center justify-center rounded-full bg-muted text-foreground">
+            <Monitor className="size-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-medium">Open the computer</span>
+            <span className="block truncate text-[12.5px] text-muted-foreground">The bots&apos; desktop, full screen.</span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </Link>
+      ) : null}
       {/* Sign out ends the list: on a phone your picture opens Settings directly, there is no menu. */}
       <button type="button" onClick={() => void signOut()} className="mt-4 flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 text-left outline-none hover:bg-card/60 focus-visible:ring-3 focus-visible:ring-ring/50">
         <span className="flex size-9 items-center justify-center rounded-full bg-muted text-foreground">
@@ -301,14 +318,12 @@ export function SettingsPage({ user, section, index = false }: { user: SessionUs
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 pt-[max(16px,env(safe-area-inset-top))] pb-8 wide:px-6 wide:py-8">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 pt-[max(16px,env(safe-area-inset-top))] pb-[calc(32px+env(safe-area-inset-bottom))] wide:px-6 wide:py-8">
         {/* A phone: the list, or one section with a way back to it. */}
-        <div className={cn("flex h-11 items-center gap-1 wide:hidden", !index && "-ml-2")}>
-          {!index ? (
-            <Button variant="ghost" size="icon-lg" aria-label="All settings" render={<Link href="/app/settings" />} nativeButton={false}>
-              <ChevronLeft aria-hidden="true" className="size-5" />
-            </Button>
-          ) : null}
+        <div className="-ml-2 flex h-11 items-center gap-1 wide:hidden">
+          <Button variant="ghost" size="icon-lg" aria-label={index ? "Back to chats" : "All settings"} render={<Link href={back} />} nativeButton={false}>
+            <ChevronLeft aria-hidden="true" className="size-5" />
+          </Button>
           <h1 className="text-[22px] font-semibold tracking-[-0.4px]">{index ? "Settings" : current.label}</h1>
         </div>
         <h1 className="hidden text-[22px] font-semibold tracking-[-0.4px] wide:block">Settings</h1>

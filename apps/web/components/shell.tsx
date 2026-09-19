@@ -3,7 +3,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { BotDialog } from "@/components/bot-dialog";
 import { ComputerPanel } from "@/components/computer-panel";
-import { MobileNav } from "@/components/mobile-nav";
 import { MobileNotifications } from "@/components/mobile-notifications";
 import { RoomDialog } from "@/components/room-dialog";
 import { AppSidebar } from "@/components/sidebar";
@@ -16,8 +15,9 @@ export type ShellDialog = { kind: "new-bot" } | { kind: "edit-bot"; botId: strin
 /**
  * The app. On a desktop: the bot list on the left (the shadcn sidebar), the
  * conversation in the middle, and whatever the page puts on the right. On a
- * phone: one screen at a time, with Chats, Computer and Settings in a bar at
- * the bottom (see mobile-nav.tsx) and a conversation on top of that. Dialogs
+ * phone: one screen at a time, Chats first, with Settings behind your
+ * picture and a conversation on top; a back chevron or a swipe in from the
+ * left edge (use-swipe-back.ts) returns. Dialogs
  * for creating bots and rooms and the computer panel live here so every page
  * can open them.
  */
@@ -30,7 +30,6 @@ export function Shell({ user, children }: { user: SessionUser; children: ReactNo
         <AppSidebar onOpen={setDialog} />
         <SidebarInset className="min-h-0 min-w-0">
           {children}
-          <MobileNav />
         </SidebarInset>
       </SidebarProvider>
       {dialog?.kind === "new-bot" || dialog?.kind === "edit-bot" ? <BotDialog botId={dialog.kind === "edit-bot" ? dialog.botId : null} onClose={() => setDialog(null)} /> : null}

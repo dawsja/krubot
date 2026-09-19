@@ -53,7 +53,7 @@ export function ChatsScreen({ className }: { className?: string }) {
           </>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(16px+env(safe-area-inset-bottom))]">
         <ApprovalsBadge className="mx-1 mb-2 w-[calc(100%-8px)]" />
         <BotRows rows={rows} hits={hits} query={query} setQuery={setQuery} onOpen={onOpen} onAsk={setAsk} />
       </div>

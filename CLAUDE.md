@@ -74,8 +74,10 @@ what is here. The README says what Kru Bot is; this says how it is made.
   New are circles top right, Search swaps in the field), a conversation is a full screen with a back
   chevron, an Info button that opens the details sheet (the right panel's
   content) and a menu with the bot's actions (`thread-actions.tsx`, shared
-  with the sidebar's long-press menu), and Chats, Computer and Settings sit
-  in the bottom bar (`mobile-nav.tsx`, hidden inside a conversation).
+  with the sidebar's long-press menu). There is no bottom bar: the app
+  opens on Chats, Settings is behind your picture (with Open the computer
+  as a row for the admin), and every screen goes back with its chevron or
+  a swipe in from the left edge (`hooks/use-swipe-back.ts`).
   `/app/settings` is the list of sections on a phone and the account on a
   desktop. Wide and narrow are CSS, not `useIsMobile`, so the server's
   HTML is right for both: layout code says `wide:` and `xwide:` (the
