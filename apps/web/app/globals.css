@@ -168,10 +168,15 @@
    */
   --primary: var(--paper-white);
   --primary-foreground: var(--carbon);
-  --primary-edge: #ebe8e1;
-  /* The same edge with the field focused: one step, never the orange ring. */
-  --primary-edge-focus: #c9c5bb;
-  --primary-shadow: 0 1px 2px rgba(20, 16, 8, 0.06), 0 2px 8px rgba(20, 16, 8, 0.06);
+  /*
+   * No edge on the light page: a white pill on linen is drawn by its own
+   * shadow, and an outline makes it read as a box instead of something
+   * floating. The dark theme has the edge instead, where a shadow can't
+   * be seen. A focused field shows a soft grey edge either way.
+   */
+  --primary-edge: var(--paper-white);
+  --primary-edge-focus: #d6d2c9;
+  --primary-shadow: 0 1px 2px rgba(20, 16, 8, 0.08), 0 4px 12px rgba(20, 16, 8, 0.07);
   --bubble-you: #dfdbd3;
   --bubble-bot: #ebe8e1;
   /*

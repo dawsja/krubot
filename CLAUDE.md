@@ -64,11 +64,16 @@ what is here. The README says what Kru Bot is; this says how it is made.
   / `text-control-foreground`, ink in both themes, so on and off always
   read; `variant="control"` on a button is for the rare one that must. A
   field that sits beside those circles is `<InputGroup variant="pill">`,
-  the same surface as a button; its edge is `--primary-edge` at rest and
-  `--primary-edge-focus` when focused, never the orange ring, which reads
-  as a band on the light page and vanishes on the dark one. The orange
-  brand is an accent only: logo, focus ring on buttons, links, unread
-  dot. Secondary actions are `variant="outline"`, tertiary
+  the same surface as a button. What draws that surface differs by theme
+  and both are `--primary-edge`: nothing in the light, where a white pill
+  on linen is defined by `--primary-shadow` and an outline would make it a
+  box, and a grey edge in the dark, where no shadow can be seen. A focused
+  field goes to `--primary-edge-focus`, never the orange ring, which reads
+  as a band on the light page and vanishes on the dark one. Something
+  outlined stays outlined (`variant="outline"`, the `pill` toggle, a form
+  field in a card): on a card there is nothing to float against. The
+  orange brand is an accent only: logo, focus ring on buttons, links,
+  unread dot. Secondary actions are `variant="outline"`, tertiary
   `ghost`, destructive `destructive`. Use `text-muted-foreground`,
   `bg-card`, `bg-muted`, `border` and friends; never raw Tailwind colours,
   never `dark:` overrides by hand, never the old `bg-carbon` /
@@ -137,9 +142,9 @@ what is here. The README says what Kru Bot is; this says how it is made.
   with a URL the API and the bots can point at (`Settings → Apps → MCP
   servers` in copy). Sign out is in the sidebar footer's profile menu on a
   desktop and the last row of the Settings list on a phone (`useSignOut`).
-  `about-card.tsx` ends the Account section with the project's own links
-  (star, sponsor); Account is the one section everybody has, so anything
-  for every person goes there.
+  `about-card.tsx` ends the Account section with the link to the
+  repository; Account is the one section everybody has, so anything for
+  every person goes there.
 - Copy is plain English in sentence case, short, no exclamation marks. Say
   "the computer" to the person, "the box" in code and docs for developers.
 
