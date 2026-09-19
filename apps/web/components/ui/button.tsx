@@ -9,7 +9,7 @@ const buttonVariants = cva(
       variant: {
         /* The primary is ink in the light and a grey in the dark (see globals.css): one colour for the main action. */
         default: "border-primary-edge bg-primary text-primary-foreground shadow-(--primary-shadow) hover:bg-primary/85 aria-expanded:bg-primary/85",
-        /* Ink in both themes: the one button that must stand out from the pills around it, like Send. */
+        /* Ink in both themes, for the rare button that must stand out from every pill around it. */
         control: "bg-control text-control-foreground hover:bg-control/85 aria-expanded:bg-control/85",
         outline:
           "border-border bg-card hover:border-ash hover:bg-card hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-card dark:hover:bg-input/50",

@@ -600,7 +600,7 @@ export function Conversation({ threadId }: { threadId: string }) {
             />
             <InputGroupAddon align="inline-end" className="mr-0 self-end pt-0 pr-0 pb-[5px] has-[>button]:mr-0">
               <Tooltip>
-                <TooltipTrigger render={<InputGroupButton type="submit" variant="control" size="icon-sm" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="rounded-full" />}>
+                <TooltipTrigger render={<InputGroupButton type="submit" variant="default" size="icon-sm" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="rounded-full" />}>
                   <SendHorizonal aria-hidden="true" />
                 </TooltipTrigger>
                 <TooltipContent>{touch ? "Send" : "Send (Enter)"}</TooltipContent>

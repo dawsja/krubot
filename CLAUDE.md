@@ -59,9 +59,10 @@ what is here. The README says what Kru Bot is; this says how it is made.
   `shadow-(--primary-shadow)` its lift). Every main button, the circles on
   the phone's screens and the bot's name pill use it. Bubbles have their
   own greys: yours is `bg-bubble-you`, a bot's `bg-bubble-bot`, a step
-  lighter. A control's on state (switch, checkbox, radio, slider, pressed
-  pill) and the Send button (`variant="control"`) are `bg-control` /
-  `text-control-foreground`, ink in both themes, so they always stand out. The orange brand is an accent only: logo, focus ring, links, unread
+  lighter. Send is a primary circle inside the composer pill. A control's
+  on state (switch, checkbox, radio, slider, pressed pill) is `bg-control`
+  / `text-control-foreground`, ink in both themes, so on and off always
+  read; `variant="control"` on a button is for the rare one that must. The orange brand is an accent only: logo, focus ring, links, unread
   dot. Secondary actions are `variant="outline"`, tertiary
   `ghost`, destructive `destructive`. Use `text-muted-foreground`,
   `bg-card`, `bg-muted`, `border` and friends; never raw Tailwind colours,
