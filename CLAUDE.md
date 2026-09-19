@@ -75,8 +75,11 @@ what is here. The README says what Kru Bot is; this says how it is made.
   list the sidebar draws: your picture top left opens Settings, Search and
   New are circles top right, Search swaps in the field; pinned bots are a
   row of big faces above the list, `PinnedTile` in `sidebar.tsx`), a conversation is a full screen with floating
-  pills over the page: a back chevron, the bot (tap it for the details
-  sheet, the right panel's content) and a menu with the bot's actions
+  pills over the page, never a bar: the header is absolute and the messages
+  scroll under it, so only the pills themselves cover what was said (the
+  strip between them is `pointer-events-none`). They are a back chevron,
+  the bot (tap it for the details sheet, the right panel's content) and a
+  menu with the bot's actions
   (`thread-actions.tsx`, shared with the sidebar's long-press menu; under
   `pointer-coarse:` menus are large rounded cards). The composer is an
   attach circle beside a pill that holds the text and the send button, on

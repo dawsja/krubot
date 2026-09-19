@@ -445,14 +445,19 @@ export function Conversation({ threadId }: { threadId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <section className="flex min-w-0 flex-1 flex-col">
-        {/* Floating pills on the page, no bar: back, the bot (tap for its details), and its actions. */}
-        <header className="flex h-[calc(64px+env(safe-area-inset-top))] shrink-0 items-center gap-2 px-3 pt-[env(safe-area-inset-top)] sm:px-4">
-          <Button size="icon-xl" aria-label="Back to chats" render={<Link href="/app" />} nativeButton={false} className="wide:hidden">
+      <section className="relative flex min-w-0 flex-1 flex-col">
+        {/*
+         * Floating pills, not a bar: the header sits over the conversation
+         * and the messages scroll under it, so nothing but the pills
+         * themselves covers what was said. The strip between them lets
+         * clicks and scrolls through.
+         */}
+        <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-[calc(64px+env(safe-area-inset-top))] items-center gap-2 px-3 pt-[env(safe-area-inset-top)] sm:px-4">
+          <Button size="icon-xl" aria-label="Back to chats" render={<Link href="/app" />} nativeButton={false} className="pointer-events-auto wide:hidden">
             <ChevronLeft aria-hidden="true" />
           </Button>
           <h1 className="sr-only">{info?.thread.name ?? "Conversation"}</h1>
-          <Button size="xl" onClick={() => setDetails(true)} aria-label="Details" className="min-w-0 max-w-full gap-2 pl-1.5 text-left xwide:pointer-events-none">
+          <Button size="xl" onClick={() => setDetails(true)} aria-label="Details" className="pointer-events-auto min-w-0 max-w-full gap-2 pl-1.5 text-left xwide:pointer-events-none">
             {bot ? <BotAvatar bot={bot} size={32} /> : <Users className="ml-2 size-5" aria-hidden="true" />}
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-[15px] leading-5 font-semibold">{info?.thread.name ?? "…"}</span>
@@ -464,20 +469,20 @@ export function Conversation({ threadId }: { threadId: string }) {
           </Button>
           <span className="flex-1" />
           {busy ? (
-            <Button variant="outline" size="sm" onClick={() => void post(`/api/threads/${threadId}/interrupt`)}>
+            <Button variant="outline" size="sm" onClick={() => void post(`/api/threads/${threadId}/interrupt`)} className="pointer-events-auto">
               <Square className="fill-current" data-icon="inline-start" aria-hidden="true" />
               Stop
             </Button>
           ) : null}
           <Tooltip>
-            <TooltipTrigger render={<Button size="icon-xl" aria-label="Toggle details" aria-pressed={panel} onClick={() => setPanel((p) => !p)} className={cn("hidden xwide:inline-flex", panel && "bg-primary/85")} />}>
+            <TooltipTrigger render={<Button size="icon-xl" aria-label="Toggle details" aria-pressed={panel} onClick={() => setPanel((p) => !p)} className={cn("pointer-events-auto hidden xwide:inline-flex", panel && "bg-primary/85")} />}>
               <PanelRight aria-hidden="true" />
             </TooltipTrigger>
             <TooltipContent>Details</TooltipContent>
           </Tooltip>
           {actions.length ? (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button size="icon-xl" aria-label="More" />}>
+              <DropdownMenuTrigger render={<Button size="icon-xl" aria-label="More" className="pointer-events-auto" />}>
                 <EllipsisVertical aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
@@ -500,7 +505,7 @@ export function Conversation({ threadId }: { threadId: string }) {
         <MessageScrollerProvider autoScroll>
           <JumpToMessage id={jumpTo} ready={messages.length > 0} />
           <MessageScroller className="flex-1">
-            <MessageScrollerViewport className="px-3 sm:px-4">
+            <MessageScrollerViewport className="px-3 pt-[calc(64px+env(safe-area-inset-top))] sm:px-4">
               <MessageScrollerContent className="gap-3 py-4">
                 {messages.length === 0 && info ? (
                   <MessageScrollerItem className="m-auto">
