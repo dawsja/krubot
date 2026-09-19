@@ -10,9 +10,9 @@ const toggleVariants = cva(
     variants: {
       variant: {
         default: "bg-transparent",
-        outline: "border border-input bg-transparent hover:bg-muted",
+        outline: "border border-primary-edge bg-transparent hover:bg-primary",
         /* Kru's chip: a pill on the card surface that fills with ink when pressed. */
-        pill: "rounded-full border border-input bg-card hover:border-ash hover:bg-card data-pressed:border-control data-pressed:bg-control data-pressed:text-control-foreground aria-pressed:border-control aria-pressed:bg-control aria-pressed:text-control-foreground",
+        pill: "rounded-full border border-primary-edge bg-transparent hover:bg-primary data-pressed:border-control data-pressed:bg-control data-pressed:text-control-foreground aria-pressed:border-control aria-pressed:bg-control aria-pressed:text-control-foreground",
       },
       size: {
         default:

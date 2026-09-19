@@ -54,23 +54,24 @@ what is here. The README says what Kru Bot is; this says how it is made.
   several places, change or extend the primitive; `className` on a call
   site is for layout.
 - **Colours are tokens.** One primary for actions: `bg-primary` /
-  `text-primary-foreground`, a white pill with a soft shadow in the light
-  and a grey one in the dark (`border-primary-edge` is its ring,
-  `shadow-(--primary-shadow)` its lift). Every main button, the circles on
-  the phone's screens and the bot's name pill use it. Bubbles have their
+  `text-primary-foreground`, a white pill in the light and a grey one in
+  the dark. Every main button, the circles on the phone's screens and the
+  bot's name pill use it. Bubbles have their
   own greys: yours is `bg-bubble-you`, a bot's `bg-bubble-bot`, a step
   lighter. Send is a primary circle inside the composer pill. A control's
   on state (switch, checkbox, radio, slider, pressed pill) is `bg-control`
   / `text-control-foreground`, ink in both themes, so on and off always
-  read; `variant="control"` on a button is for the rare one that must. A
-  field that sits beside those circles is `<InputGroup variant="pill">`,
-  the same surface as a button. A slight grey `--primary-edge` draws that
-  shape in both themes and nothing else does: `--primary-shadow` is
-  `none`, so a button, a circle and a field read as one object at any
-  size. A focused field steps to `--primary-edge-focus`, never the orange
-  ring, which reads as a band on the light page and vanishes on the dark
-  one. The orange brand is an accent only: logo, focus ring on buttons,
-  links, unread dot. Secondary actions are `variant="outline"`, tertiary
+  read; `variant="control"` on a button is for the rare one that must. Everything
+  else is one pill: a slight grey `--primary-edge` draws it in both themes
+  and nothing else does (`--primary-shadow` is `none`), so a button, a
+  circle, a field, a select and a toggle read as the same object at any
+  size. It is filled with `bg-primary` when it is a main action or a field
+  you type into (`Input`, `Textarea`, `Select`, `InputGroup`), and
+  transparent with the same edge when it is secondary
+  (`variant="outline"`, a toggle until it is pressed). A focused field
+  steps to `--primary-edge-focus`, never the orange ring, which reads as a
+  band on the light page and vanishes on the dark one. The orange brand is
+  an accent only: logo, focus ring on buttons, links, unread dot. Secondary actions are `variant="outline"`, tertiary
   `ghost`, destructive `destructive`. Use `text-muted-foreground`,
   `bg-card`, `bg-muted`, `border` and friends; never raw Tailwind colours,
   never `dark:` overrides by hand, never the old `bg-carbon` /

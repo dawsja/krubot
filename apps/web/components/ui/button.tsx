@@ -11,8 +11,9 @@ const buttonVariants = cva(
         default: "border-primary-edge bg-primary text-primary-foreground shadow-(--primary-shadow) hover:bg-primary/85 aria-expanded:bg-primary/85",
         /* Ink in both themes, for the rare button that must stand out from every pill around it. */
         control: "bg-control text-control-foreground hover:bg-control/85 aria-expanded:bg-control/85",
+        /* The same pill as the primary, outlined rather than filled. */
         outline:
-          "border-border bg-card hover:border-ash hover:bg-card hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-card dark:hover:bg-input/50",
+          "border-primary-edge bg-transparent hover:bg-primary hover:text-foreground aria-expanded:bg-primary aria-expanded:text-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:

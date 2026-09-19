@@ -19,9 +19,9 @@ const inputGroupVariants = cva(
   {
     variants: {
       variant: {
-        default: "border-input bg-card has-[[data-slot=input-group-control]:disabled]:bg-input/50 dark:bg-input/30 dark:has-[[data-slot=input-group-control]:disabled]:bg-input/80",
+        default: "border-primary-edge bg-primary has-[[data-slot=input-group-control]:disabled]:opacity-60",
         /* Kru's composer and search: the same surface as the circles beside them. */
-        pill: "border-primary-edge bg-primary shadow-(--primary-shadow)",
+        pill: "border-primary-edge bg-primary",
       },
     },
     defaultVariants: { variant: "default" },
