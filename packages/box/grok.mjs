@@ -297,7 +297,6 @@ export class GrokSession extends BridgedSession {
     // Kru's own tools gate themselves in the API.
     if (typeof input.tool_name === "string" && input.tool_name.startsWith("kru__")) return permissionOutcome(options, true);
     if (this.permission === "full") return permissionOutcome(options, true);
-    if (this.permission === "edits" && toolCall.kind === "edit") return permissionOutcome(options, true);
     const subject = permissionSubject(toolCall);
     const answer = await this.askPermission(subject.tool, subject.input);
     return permissionOutcome(options, answer.allow);

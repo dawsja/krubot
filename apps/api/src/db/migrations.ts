@@ -403,6 +403,16 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE kru_secret_requests ADD COLUMN target TEXT NOT NULL DEFAULT 'secret';
   `,
+
+  /*
+   * Approval levels are down to two: 'ask' and 'full'. A bot on the old
+   * 'edits' becomes 'ask', the careful one; edits in its own folder never
+   * ask now anyway. The CHECK still allows the old value, which nothing
+   * writes, rather than rebuilding the table to forbid it.
+   */
+  `
+  UPDATE kru_bots SET approval = 'ask' WHERE approval = 'edits';
+  `,
 ];
 
 export function runMigrations(db: Database) {

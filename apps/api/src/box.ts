@@ -260,7 +260,7 @@ export type AgentTurnInput = {
   model: string;
   effort?: string | null;
   maxTurns?: number | null;
-  permission: "ask" | "edits" | "full";
+  permission: "ask" | "full";
   systemPrompt: string;
   prompt: string;
   attachments?: { name: string; mediaType: string; data: string }[];

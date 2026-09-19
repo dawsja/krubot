@@ -37,7 +37,7 @@ export type CliTurn = {
   modelId: string;
   effort?: string | null;
   maxTurns?: number;
-  permission: "ask" | "edits" | "full";
+  permission: "ask" | "full";
   instructions: string;
   prompt: string;
   attachments?: { name: string; mediaType: string; data: string }[];

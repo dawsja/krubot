@@ -185,11 +185,19 @@ what is here. The README says what Kru Bot is; this says how it is made.
   person's id: `toolsFor`, `executeAction` and `startConnection` run on
   that person's key and their own connection, never anyone else's. A new
   key for a different project forgets the old project's connections.
-- **An approval reads the bot's level at the moment it decides**, not from
-  the object the turn started with (`requestApproval` re-reads the bot): a
-  turn runs for minutes, and changing the level while a bot works is
-  exactly when a person does it. `edits` only auto-accepts file edits;
-  shell commands and app actions still ask, which is what its label says.
+- **Two approval levels, and neither gates a bot's own folder.** `ask`
+  ("Manual") and `full` ("Always allow") are the whole set. Reading is
+  never gated, and nor is a change a bot makes inside
+  `~/.bots/<id>`: that folder is its desk, so `inOwnHome` in
+  `src/approvals.ts` lets it through at either level. Past that, `full`
+  allows everything and `ask` sends a card and waits: a shell command, a
+  file elsewhere, a connected-app action. The level is read at the moment
+  it decides, not from the object the turn started with
+  (`requestApproval` re-reads the bot), because a turn runs for minutes
+  and changing the level while a bot works is exactly when a person does
+  it. The box only ever hears `ask` or `full` (`PERMISSION_MODES`); under
+  `ask` every prompt comes to the broker, which answers the free ones
+  itself.
 - Long work is started by the dispatcher (`src/dispatcher.ts`) and awaited
   in the responder (`src/responder.ts`); a tick stays quick. While the
   computer updates or resets (`src/updater.ts`), nothing new starts and

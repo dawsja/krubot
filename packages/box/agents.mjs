@@ -133,15 +133,16 @@ export function claudeAccessEnv(access) {
 }
 
 /** How a session's own tool calls (shell, file edits, web) are gated. */
-export const PERMISSION_MODES = ["ask", "edits", "full"];
+export const PERMISSION_MODES = ["ask", "full"];
 
 /**
  * The argv for a session. The container and its unprivileged user are the
  * sandbox; what the person sees is decided by the permission mode:
  *
  *   ask    every permission prompt the CLI would show goes to the API as a
- *          call to the `permission` MCP tool, and waits for the person.
- *   edits  file edits are accepted; everything else asks the same way.
+ *          call to the `permission` MCP tool. The API answers on its own
+ *          for a read and for a change in the bot's own folder; anything
+ *          else waits for the person.
  *   full   permissions are skipped outright.
  *
  * @param {{
@@ -158,7 +159,7 @@ export function sessionArgs({ model, effort, maxTurns, systemPromptFile, mcpConf
   if (permission === "full" || !mcpConfigFile) {
     args.push("--dangerously-skip-permissions");
   } else {
-    args.push("--permission-mode", permission === "edits" ? "acceptEdits" : "default");
+    args.push("--permission-mode", "default");
     args.push("--permission-prompt-tool", "mcp__kru__permission");
   }
   args.push("--append-system-prompt-file", systemPromptFile);

@@ -38,12 +38,10 @@ test("sessionArgs routes permission prompts to the kru bridge unless full", () =
   assert.ok(ask.includes("--permission-prompt-tool"));
   assert.equal(ask[ask.indexOf("--permission-mode") + 1], "default");
   assert.ok(!ask.includes("--dangerously-skip-permissions"));
-  const edits = sessionArgs({ ...base, permission: "edits" });
-  assert.equal(edits[edits.indexOf("--permission-mode") + 1], "acceptEdits");
   const full = sessionArgs({ ...base, permission: "full" });
   assert.ok(full.includes("--dangerously-skip-permissions"));
   assert.ok(!full.includes("--permission-prompt-tool"));
-  assert.deepEqual(PERMISSION_MODES, ["ask", "edits", "full"]);
+  assert.deepEqual(PERMISSION_MODES, ["ask", "full"]);
 });
 
 test("argsKey changes with the permission mode", () => {

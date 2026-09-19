@@ -19,13 +19,17 @@ export const BOT_COLORS = ["#FF5A0F", "#3B82F6", "#EF4444", "#F59E0B", "#8B5CF6"
  * Claude Code would show to you as a card; `edits` accepts file edits in the
  * bot's home and asks for the rest; `full` skips permissions.
  */
-export const APPROVAL_LEVELS = ["ask", "edits", "full"] as const;
+/*
+ * Two levels, and neither one gates reading or a bot's own folder on the
+ * computer: that folder is its desk, and a bot that has to ask to write a
+ * note in it is no use. What differs is everything outside it.
+ */
+export const APPROVAL_LEVELS = ["ask", "full"] as const;
 export type ApprovalLevel = (typeof APPROVAL_LEVELS)[number];
 
 export const APPROVAL_LEVEL_LABELS: Record<ApprovalLevel, { title: string; detail: string }> = {
-  ask: { title: "Ask for approval", detail: "Shell commands, file changes and connected-app actions wait for you." },
-  edits: { title: "Auto-accept edits", detail: "File edits in the bot's own home go ahead; everything else asks." },
-  full: { title: "Full access", detail: "Nothing asks. Only for a bot you trust with its computer and apps." },
+  ask: { title: "Manual", detail: "Shell commands, files outside its own folder and connected-app actions wait for you." },
+  full: { title: "Always allow", detail: "Nothing asks. Only for a bot you trust with the computer and your apps." },
 };
 
 /** The Claude models the CLI can run, under the person's own plan. */

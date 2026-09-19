@@ -2,6 +2,7 @@ import type { Approval, Bot } from "@krubot/shared";
 import { approvalTimeoutMs } from "./config.ts";
 import { addRule, createApproval, getApproval, listApprovals, listRules, resolveApproval } from "./data/approvals.ts";
 import { getBot } from "./data/bots.ts";
+import { botHome } from "./memory.ts";
 import { postMessage } from "./data/threads.ts";
 import { sendPush } from "./push.ts";
 
@@ -58,13 +59,38 @@ function ruleMatches(rule: string, tool: string, input: Record<string, unknown>)
 
 /** Tools that read only: never worth a card, whatever the level. */
 const READ_ONLY = new Set(["Read", "Glob", "Grep", "LS", "TodoRead", "TodoWrite", "Task", "WebSearch", "NotebookRead"]);
-/** Edits inside the bot's own home are what "Auto-accept edits" accepts. */
-const EDITS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+/** Tools that change a file, and say which one. */
+const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+/** Where a tool says which file it means. */
+const PATH_KEYS = ["file_path", "notebook_path", "path"];
 
 /**
- * Asks, or doesn't. Resolves with the decision once the person answers, a
- * matching rule says yes, the level says nothing asks, or the wait runs
- * out. `always` counts as allow and saves the rule.
+ * A path in the bot's own folder on the computer. The session runs there,
+ * so a relative path that doesn't climb out is inside it; an absolute one
+ * has to name it. `.bots/<id>` is unique to the bot, so this holds
+ * whatever the agent's home is called on the box.
+ */
+function ownPath(botId: string, value: string): boolean {
+  const path = value.trim();
+  if (!path || path.startsWith("~") || path.split("/").includes("..")) return false;
+  if (!path.startsWith("/")) return true;
+  const home = `/${botHome(botId)}`;
+  return path.endsWith(home) || path.includes(`${home}/`);
+}
+
+/** Its own folder is its desk: it works there without asking, at either level. */
+function inOwnHome(botId: string, tool: string, input: Record<string, unknown>): boolean {
+  if (!FILE_TOOLS.has(tool)) return false;
+  const paths = PATH_KEYS.map((key) => input[key]).filter((value): value is string => typeof value === "string");
+  return paths.length > 0 && paths.every((path) => ownPath(botId, path));
+}
+
+/**
+ * Asks, or doesn't. Nothing gates reading, or a change the bot makes in
+ * its own folder. Past that, `full` lets everything through and `ask`
+ * sends a card and waits: a shell command, a file elsewhere, an app
+ * action. Resolves once the person answers, a saved rule says yes, or the
+ * wait runs out; `always` counts as allow and saves the rule.
  */
 export async function requestApproval(input: { bot: Bot; threadId: string; tool: string; input: Record<string, unknown>; summary?: string }): Promise<Decision> {
   const { threadId, tool } = input;
@@ -76,7 +102,7 @@ export async function requestApproval(input: { bot: Bot; threadId: string; tool:
   const bot = getBot(input.bot.id) ?? input.bot;
   if (bot.approval === "full") return "allow";
   if (READ_ONLY.has(tool)) return "allow";
-  if (bot.approval === "edits" && EDITS.has(tool)) return "allow";
+  if (inOwnHome(bot.id, tool, input.input)) return "allow";
   for (const rule of listRules(bot.id)) {
     if (ruleMatches(rule, tool, input.input)) return "allow";
   }

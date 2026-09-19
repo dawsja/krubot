@@ -81,6 +81,31 @@ describe("data", () => {
     updateBot(stale.id, { approval: stale.approval });
   });
 
+  test("a bot works in its own folder without asking, and asks outside it", async () => {
+    const { listBots, updateBot } = await import("../src/data/bots.ts");
+    const { listMessages } = await import("../src/data/threads.ts");
+    const { requestApproval } = await import("../src/approvals.ts");
+    const bot = listBots()[0]!;
+    updateBot(bot.id, { approval: "ask" });
+    const ask = (tool: string, input: Record<string, unknown>) => requestApproval({ bot: { ...bot, approval: "ask" }, threadId: bot.threadId, tool, input });
+    const before = listMessages(bot.threadId).length;
+    // Its own folder, by an absolute path and by a relative one.
+    expect(await ask("Write", { file_path: `/home/agent/.bots/${bot.id}/notes.md` })).toBe("allow");
+    expect(await ask("Edit", { file_path: "memory/plan.md" })).toBe("allow");
+    // Reading is never gated, wherever it points.
+    expect(await ask("Read", { file_path: "/etc/hosts" })).toBe("allow");
+    expect(listMessages(bot.threadId)).toHaveLength(before);
+    // Another bot's folder, a climb out of its own, and the home itself are not.
+    for (const path of [`/home/agent/.bots/${bot.id}-other/x.md`, `/home/agent/.bots/${bot.id}/../else.md`, "/home/agent/notes.md"]) {
+      const pending = ask("Write", { file_path: path });
+      const card = listMessages(bot.threadId).at(-1)!;
+      expect(card.kind).toBe("approval");
+      const { decide } = await import("../src/approvals.ts");
+      decide(card.approvalId!, "deny");
+      expect(await pending).toBe("deny");
+    }
+  });
+
   test("approval rules and routines", async () => {
     const { addRule, listRules, createApproval, resolveApproval } = await import("../src/data/approvals.ts");
     const { createRoutine, claimDueRoutines, listRoutines } = await import("../src/data/routines.ts");
