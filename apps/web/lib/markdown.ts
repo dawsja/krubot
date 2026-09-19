@@ -9,8 +9,10 @@
 export type Inline =
   | { kind: "text"; text: string }
   | { kind: "code"; text: string }
-  | { kind: "bold" | "italic"; children: Inline[] }
+  | { kind: "bold" | "italic" | "strike"; children: Inline[] }
   | { kind: "link"; text: string; href: string };
+
+export type Align = "left" | "center" | "right";
 
 export type ListItem = { depth: number; marker: string; inlines: Inline[] };
 
@@ -20,6 +22,7 @@ export type Block =
   | { kind: "list"; ordered: boolean; items: ListItem[] }
   | { kind: "quote"; inlines: Inline[] }
   | { kind: "code"; lang: string; text: string }
+  | { kind: "table"; align: Align[]; head: Inline[][]; rows: Inline[][][] }
   | { kind: "rule" };
 
 /*
@@ -28,7 +31,7 @@ export type Block =
  * link at all.
  */
 const INLINE =
-  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\*\*(?=\S)([\s\S]*?\S)\*\*|__(?=\S)([\s\S]*?\S)__|(?<![\w*])\*(?=[^*\s])([^*\n]*?[^*\s])\*(?![\w*])|(?<![\w_])_(?=[^_\s])([^_\n]*?[^_\s])_(?![\w_])|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>`\]]+)/g;
+  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\*\*(?=\S)([\s\S]*?\S)\*\*|__(?=\S)([\s\S]*?\S)__|~~(?=\S)([\s\S]*?\S)~~|(?<![\w*])\*(?=[^*\s])([^*\n]*?[^*\s])\*(?![\w*])|(?<![\w_])_(?=[^_\s])([^_\s]|[^_\n]*?[^_\s])_(?![\w_])|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>`\]]+)/g;
 
 const count = (text: string, char: string) => text.split(char).length - 1;
 
@@ -54,10 +57,11 @@ export function parseInline(text: string): Inline[] {
     const index = match.index ?? 0;
     if (index < last) continue;
     if (index > last) out.push({ kind: "text", text: text.slice(last, index) });
-    const [, ticks, code, bold1, bold2, italic1, italic2, linkText, href, bare] = match;
+    const [, ticks, code, bold1, bold2, strike, italic1, italic2, linkText, href, bare] = match;
     let consumed = match[0].length;
     if (ticks) out.push({ kind: "code", text: ticks.length > 1 ? code.trim() : code });
     else if (bold1 ?? bold2) out.push({ kind: "bold", children: parseInline(bold1 ?? bold2) });
+    else if (strike) out.push({ kind: "strike", children: parseInline(strike) });
     else if (italic1 ?? italic2) out.push({ kind: "italic", children: parseInline(italic1 ?? italic2) });
     else if (bare) {
       const url = trimUrl(bare);
@@ -71,6 +75,17 @@ export function parseInline(text: string): Inline[] {
 }
 
 const FENCE = /^\s*(`{3,}|~{3,})\s*([\w+-]*)/;
+const TABLE_CELL_RULE = /^:?-+:?$/;
+
+/** The cells of one row, without the outer pipes; `\|` stays a pipe. */
+function cellsOf(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.replace(/\\\|/g, "|").trim());
+}
 const HEADING = /^\s*(#{1,6})\s+(.*?)\s*#*\s*$/;
 const LIST_ITEM = /^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$/;
 const QUOTE = /^\s*>\s?(.*)$/;
@@ -104,6 +119,25 @@ export function parseMarkdown(source: string): Block[] {
     if (RULE.test(line)) {
       flush();
       blocks.push({ kind: "rule" });
+      continue;
+    }
+    // A table is a header line, a line of dashes, then rows until a blank one.
+    const next = lines[i + 1];
+    const head = line.includes("|") ? cellsOf(line) : null;
+    const rule = head && next !== undefined && next.includes("-") ? cellsOf(next) : null;
+    // The dashes say where the table is, and must have the header's columns.
+    if (head && rule && rule.length === head.length && rule.every((cell) => TABLE_CELL_RULE.test(cell))) {
+      const align: Align[] = rule.map((cell) => (cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : "left"));
+      const rows: Inline[][][] = [];
+      let at = i + 2;
+      for (; at < lines.length && lines[at]!.trim() && lines[at]!.includes("|"); at += 1) {
+        const cells = cellsOf(lines[at]!);
+        // Square it off, so a short or long row still lines up.
+        rows.push(head.map((_, column) => parseInline(cells[column] ?? "")));
+      }
+      flush();
+      blocks.push({ kind: "table", align, head: head.map((cell) => parseInline(cell)), rows });
+      i = at - 1;
       continue;
     }
     const heading = HEADING.exec(line);

@@ -1,5 +1,6 @@
 import { Separator } from "@/components/ui/separator";
-import { parseInline, parseMarkdown, type Block, type Inline } from "@/lib/markdown";
+import { parseInline, parseMarkdown, type Align, type Block, type Inline } from "@/lib/markdown";
+import { cn } from "@/lib/utils";
 
 function Inlines({ inlines }: { inlines: Inline[] }) {
   return (
@@ -26,6 +27,12 @@ function Inlines({ inlines }: { inlines: Inline[] }) {
                 <Inlines inlines={inline.children} />
               </em>
             );
+          case "strike":
+            return (
+              <s key={i} className="text-muted-foreground">
+                <Inlines inlines={inline.children} />
+              </s>
+            );
           case "link":
             return (
               <a key={i} href={inline.href} target="_blank" rel="noreferrer noopener" className="underline decoration-ash underline-offset-2 hover:decoration-foreground">
@@ -39,6 +46,8 @@ function Inlines({ inlines }: { inlines: Inline[] }) {
     </>
   );
 }
+
+const ALIGN: Record<Align, string> = { left: "text-left", center: "text-center", right: "text-right" };
 
 function BlockView({ block }: { block: Block }) {
   switch (block.kind) {
@@ -75,6 +84,34 @@ function BlockView({ block }: { block: Block }) {
         <pre className="overflow-x-auto rounded-lg border bg-background p-3 font-mono text-[12px] leading-5 text-foreground">
           <code>{block.text}</code>
         </pre>
+      );
+    case "table":
+      // Its own scroller: a wide table shouldn't stretch the bubble.
+      return (
+        <div className="-mx-1 overflow-x-auto">
+          <table className="w-full border-collapse text-[13px]">
+            <thead>
+              <tr>
+                {block.head.map((cell, i) => (
+                  <th key={i} className={cn("border-b border-primary-edge px-2 py-1.5 font-medium whitespace-nowrap", ALIGN[block.align[i] ?? "left"])}>
+                    <Inlines inlines={cell} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, c) => (
+                    <td key={c} className={cn("border-b border-primary-edge/60 px-2 py-1.5 align-top last:border-b-0", ALIGN[block.align[c] ?? "left"])}>
+                      <Inlines inlines={cell} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     case "rule":
       return <Separator />;

@@ -65,6 +65,22 @@ describe("data", () => {
     expect(claimPendingMessages("test", 5).map((m) => m.id)).toEqual([prompt.id]);
   });
 
+  test("an approval reads the bot's level now, not as the turn started", async () => {
+    const { listBots, updateBot } = await import("../src/data/bots.ts");
+    const { listMessages } = await import("../src/data/threads.ts");
+    const { requestApproval } = await import("../src/approvals.ts");
+    const stale = listBots()[0]!;
+    const before = listMessages(stale.threadId).length;
+    // The person opens the profile mid-turn and gives it full access.
+    updateBot(stale.id, { approval: "full" });
+    // The turn still holds the object it loaded when it began.
+    const decision = await requestApproval({ bot: { ...stale, approval: "ask" }, threadId: stale.threadId, tool: "Bash", input: { command: "ls" } });
+    expect(decision).toBe("allow");
+    // Nothing was asked, so no card landed in the conversation.
+    expect(listMessages(stale.threadId)).toHaveLength(before);
+    updateBot(stale.id, { approval: stale.approval });
+  });
+
   test("approval rules and routines", async () => {
     const { addRule, listRules, createApproval, resolveApproval } = await import("../src/data/approvals.ts");
     const { createRoutine, claimDueRoutines, listRoutines } = await import("../src/data/routines.ts");

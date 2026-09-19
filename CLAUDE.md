@@ -127,9 +127,13 @@ what is here. The README says what Kru Bot is; this says how it is made.
   there rather than polling from a component.
 - **Mascots come from the kru-bot skill** (`components/hq/kru-bot.tsx`),
   copied 1:1. Don't redraw the flame.
-- **A bot's message is light Markdown** (`lib/markdown.ts`), and a bare URL
-  is a link too: agents write them as plain text far more often than as
-  `[text](url)`. Anything a person has to act on (a sign-in, a key) is a
+- **A bot's message is light Markdown** (`lib/markdown.ts`): paragraphs,
+  headings, lists, quotes, fenced and inline code, rules, tables, bold,
+  italic, strikethrough and links. A bare URL is a link too, since agents
+  write them as plain text far more often than as `[text](url)`. Agents
+  reach for a table whenever they return figures, so it is not optional.
+  Images are deliberately not rendered: a bot hands over a file with
+  `send_file` and it becomes an attachment. Anything a person has to act on (a sign-in, a key) is a
   card, not a link. Every one of them is built on `action-card.tsx`, one
   shell in the same grey with the same edge as a button or a field: the
   approval in `conversation.tsx`, then `secret-card.tsx`,
@@ -181,6 +185,11 @@ what is here. The README says what Kru Bot is; this says how it is made.
   person's id: `toolsFor`, `executeAction` and `startConnection` run on
   that person's key and their own connection, never anyone else's. A new
   key for a different project forgets the old project's connections.
+- **An approval reads the bot's level at the moment it decides**, not from
+  the object the turn started with (`requestApproval` re-reads the bot): a
+  turn runs for minutes, and changing the level while a bot works is
+  exactly when a person does it. `edits` only auto-accepts file edits;
+  shell commands and app actions still ask, which is what its label says.
 - Long work is started by the dispatcher (`src/dispatcher.ts`) and awaited
   in the responder (`src/responder.ts`); a tick stays quick. While the
   computer updates or resets (`src/updater.ts`), nothing new starts and

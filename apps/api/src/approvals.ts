@@ -1,6 +1,7 @@
 import type { Approval, Bot } from "@krubot/shared";
 import { approvalTimeoutMs } from "./config.ts";
 import { addRule, createApproval, getApproval, listApprovals, listRules, resolveApproval } from "./data/approvals.ts";
+import { getBot } from "./data/bots.ts";
 import { postMessage } from "./data/threads.ts";
 import { sendPush } from "./push.ts";
 
@@ -66,7 +67,13 @@ const EDITS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
  * out. `always` counts as allow and saves the rule.
  */
 export async function requestApproval(input: { bot: Bot; threadId: string; tool: string; input: Record<string, unknown>; summary?: string }): Promise<Decision> {
-  const { bot, threadId, tool } = input;
+  const { threadId, tool } = input;
+  /*
+   * The level as it is right now, not as it was when the turn started: a
+   * turn can run for minutes, and changing the level while a bot works is
+   * exactly when a person does it.
+   */
+  const bot = getBot(input.bot.id) ?? input.bot;
   if (bot.approval === "full") return "allow";
   if (READ_ONLY.has(tool)) return "allow";
   if (bot.approval === "edits" && EDITS.has(tool)) return "allow";
