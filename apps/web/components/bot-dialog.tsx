@@ -1,6 +1,6 @@
 "use client";
 
-import { APPROVAL_LEVELS, APPROVAL_LEVEL_LABELS, BOT_COLORS, BOT_EXPRESSIONS, BOT_LIMITS, BOT_TEMPLATES, type Bot, type BotExpression, type Connection, type McpServer, mcpToolkit } from "@krubot/shared";
+import { APPROVAL_LEVELS, APPROVAL_LEVEL_LABELS, BOT_COLORS, BOT_EXPRESSIONS, BOT_LIMITS, type Bot, type BotExpression, type Connection, type McpServer, mcpToolkit } from "@krubot/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { appName, AppIcon, McpIcon } from "@/components/app-icons";
@@ -30,7 +30,6 @@ type Form = {
 };
 
 const APPROVAL_ITEMS = APPROVAL_LEVELS.map((level) => ({ value: level, label: APPROVAL_LEVEL_LABELS[level].title }));
-const TEMPLATE_ITEMS = [{ value: "", label: "A blank bot" }, ...BOT_TEMPLATES.map((t) => ({ value: t.id, label: t.name }))];
 
 const EMPTY: Form = { name: "", title: "", description: "", color: BOT_COLORS[0], expression: "happy", approval: "ask", toolkits: [], notify: true };
 
@@ -42,7 +41,6 @@ export function BotDialog({ botId, onClose }: { botId: string | null; onClose: (
   const [form, setForm] = useState<Form>(existing ? pick(existing) : EMPTY);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [servers, setServers] = useState<McpServer[]>([]);
-  const [template, setTemplate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
@@ -55,13 +53,6 @@ export function BotDialog({ botId, onClose }: { botId: string | null; onClose: (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function applyTemplate(id: string) {
-    setTemplate(id);
-    const t = BOT_TEMPLATES.find((x) => x.id === id);
-    if (!t) return;
-    setForm((f) => ({ ...f, name: f.name || t.name, title: t.title, description: t.description, color: t.color, expression: t.expression, toolkits: t.toolkits }));
-  }
-
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
@@ -72,10 +63,8 @@ export function BotDialog({ botId, onClose }: { botId: string | null; onClose: (
         await patch(`/api/bots/${existing.id}`, form);
         await refresh();
       } else {
-        // A template that is a Chief of Staff makes one; otherwise a bot becomes
-        // the Chief when you tell it so in conversation.
-        const isChief = BOT_TEMPLATES.find((t) => t.id === template)?.isChief ?? false;
-        const { bot } = await post<{ bot: Bot }>("/api/bots", { ...form, isChief });
+        // A bot becomes the Chief of Staff when you tell it so in conversation.
+        const { bot } = await post<{ bot: Bot }>("/api/bots", form);
         await refresh();
         router.push(`/app/t/${bot.threadId}`);
       }
@@ -95,53 +84,35 @@ export function BotDialog({ botId, onClose }: { botId: string | null; onClose: (
         </DialogHeader>
         <form onSubmit={submit}>
           <FieldGroup className="gap-5">
-            <div className="flex items-start gap-4">
-              <div className="flex w-44 shrink-0 flex-col items-center gap-2">
-                <KruBot color={form.color} size={88} expression={form.expression} />
-                {/* The colour swatches are radios drawn as dots. */}
-                <RadioGroup aria-label="Color" value={form.color} onValueChange={(value) => typeof value === "string" && set("color", value)} className="flex w-auto flex-wrap justify-center gap-1">
-                  {BOT_COLORS.map((c) => (
-                    <RadioGroupItem key={c} value={c} aria-label={c} className="size-5 border-2 border-transparent bg-(--swatch) ring-control ring-offset-2 ring-offset-card data-checked:border-transparent data-checked:bg-(--swatch) data-checked:ring-2 dark:bg-(--swatch) dark:data-checked:bg-(--swatch) [&>span]:hidden" style={{ "--swatch": c } as React.CSSProperties} />
-                  ))}
-                </RadioGroup>
-                <ToggleGroup aria-label="Expression" variant="pill" size="sm" value={[form.expression]} onValueChange={(v) => v[0] && set("expression", v[0] as BotExpression)} spacing={1} className="flex-wrap justify-center">
-                  {BOT_EXPRESSIONS.map((e) => (
-                    <ToggleGroupItem key={e} value={e} className="h-6 px-2 text-[11px]">
-                      {e}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </div>
-              <FieldGroup className="gap-3">
-                {!existing ? (
-                  <Field>
-                    <FieldLabel htmlFor="bot-template">Start from</FieldLabel>
-                    <Select items={TEMPLATE_ITEMS} value={template} onValueChange={(value) => applyTemplate(value ?? "")}>
-                      <SelectTrigger id="bot-template" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {TEMPLATE_ITEMS.map((t) => (
-                            <SelectItem key={t.value} value={t.value}>
-                              {t.label}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                ) : null}
-                <Field>
-                  <FieldLabel htmlFor="bot-name">Name</FieldLabel>
-                  <Input id="bot-name" value={form.name} onChange={(e) => set("name", e.target.value)} required maxLength={BOT_LIMITS.name} />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="bot-title">Job</FieldLabel>
-                  <Input id="bot-title" value={form.title} onChange={(e) => set("title", e.target.value)} maxLength={BOT_LIMITS.title} placeholder="Sales Outbound, Inbox Manager, Chief of Staff…" />
-                </Field>
-              </FieldGroup>
+            {/* How it looks comes first, across the width: the swatches and the
+                expressions need the room to be worth tapping. */}
+            <div className="flex flex-col items-center gap-4">
+              <KruBot color={form.color} size={104} expression={form.expression} />
+              {/* The colour swatches are radios drawn as dots. */}
+              <RadioGroup aria-label="Color" value={form.color} onValueChange={(value) => typeof value === "string" && set("color", value)} className="flex w-auto flex-wrap justify-center gap-2.5">
+                {BOT_COLORS.map((c) => (
+                  <RadioGroupItem key={c} value={c} aria-label={c} className="size-8 border-2 border-transparent bg-(--swatch) ring-control ring-offset-2 ring-offset-card data-checked:border-transparent data-checked:bg-(--swatch) data-checked:ring-2 dark:bg-(--swatch) dark:data-checked:bg-(--swatch) [&>span]:hidden" style={{ "--swatch": c } as React.CSSProperties} />
+                ))}
+              </RadioGroup>
+              <ToggleGroup aria-label="Expression" variant="pill" value={[form.expression]} onValueChange={(v) => v[0] && set("expression", v[0] as BotExpression)} spacing={1.5} className="flex-wrap justify-center">
+                {BOT_EXPRESSIONS.map((e) => (
+                  <ToggleGroupItem key={e} value={e} className="px-3.5">
+                    {e}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
             </div>
+
+            <FieldGroup className="gap-3">
+              <Field>
+                <FieldLabel htmlFor="bot-name">Name</FieldLabel>
+                <Input id="bot-name" value={form.name} onChange={(e) => set("name", e.target.value)} required maxLength={BOT_LIMITS.name} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="bot-title">Job</FieldLabel>
+                <Input id="bot-title" value={form.title} onChange={(e) => set("title", e.target.value)} maxLength={BOT_LIMITS.title} placeholder="Sales Outbound, Inbox Manager, Chief of Staff…" />
+              </Field>
+            </FieldGroup>
 
             <Field>
               <FieldLabel htmlFor="bot-description">How it should work</FieldLabel>
