@@ -3,9 +3,9 @@
 import { composioCardToolkit, type Bot, type McpServer, type Message } from "@krubot/shared";
 import { Check, LogIn, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ActionCard } from "@/components/action-card";
 import { ConnectCard } from "@/components/connect-card";
 import { useLiveEvents } from "@/components/hq/live-events";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { McpPasteSignIn, startMcpSignIn } from "@/components/mcp-signin";
 import { Spinner } from "@/components/ui/spinner";
@@ -67,12 +67,7 @@ function McpSignInCard({ message, bot }: { message: Message; bot: Bot | undefine
   }
 
   return (
-    <Bubble variant="outline" className="max-w-[80%]">
-      <BubbleContent className="flex flex-col gap-2 p-3">
-        <p className="flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
-          <LogIn className="size-3.5" aria-hidden="true" />
-          {bot?.name ?? "A bot"} connected an app
-        </p>
+    <ActionCard icon={<LogIn className="size-3.5" aria-hidden="true" />} title={`${bot?.name ?? "A bot"} connected an app`}>
         <p className="text-[13.5px]">
           <span className="font-medium">{name}</span>
           {host ? <span className="text-muted-foreground"> · {host}</span> : null}
@@ -109,7 +104,6 @@ function McpSignInCard({ message, bot }: { message: Message; bot: Bot | undefine
             <p className="text-[11.5px] text-muted-foreground">You sign in on {host || "the app's site"}; Kru Bot keeps the token and the bots never see it.</p>
           </>
         )}
-      </BubbleContent>
-    </Bubble>
+    </ActionCard>
   );
 }

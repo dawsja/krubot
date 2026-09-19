@@ -3,8 +3,8 @@
 import type { Bot, Message, SecretRequest } from "@krubot/shared";
 import { KeyRound } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { ActionCard } from "@/components/action-card";
 import { useLiveEvents } from "@/components/hq/live-events";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -60,12 +60,7 @@ export function SecretCard({ message, bot }: { message: Message; bot: Bot | unde
   }
 
   return (
-    <Bubble variant="outline" className="max-w-[80%]">
-      <BubbleContent className="flex flex-col gap-2 border-amber/40 bg-amber/10 p-3">
-        <p className="flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
-          <KeyRound className="size-3.5" aria-hidden="true" />
-          {bot?.name ?? "A bot"} needs {composio ? "your Composio key" : "a secret"}
-        </p>
+    <ActionCard icon={<KeyRound className="size-3.5" aria-hidden="true" />} title={`${bot?.name ?? "A bot"} needs ${composio ? "your Composio key" : "a secret"}`}>
         <p className="text-[13.5px]">
           <span className={composio ? "font-medium" : "font-mono font-medium"}>{composio ? "Composio API key" : name}</span>
           {reason ? <span className="text-muted-foreground"> · {reason}</span> : null}
@@ -102,7 +97,6 @@ export function SecretCard({ message, bot }: { message: Message; bot: Bot | unde
         ) : (
           <p className="text-[12px] text-muted-foreground">{status === "given" ? (composio ? "Stored. Connected apps are on." : "Stored. The bot was told it's there.") : status === "declined" ? "Declined." : "Nobody answered in time."}</p>
         )}
-      </BubbleContent>
-    </Bubble>
+    </ActionCard>
   );
 }

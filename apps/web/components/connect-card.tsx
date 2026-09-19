@@ -3,9 +3,9 @@
 import type { AppCatalogEntry, Bot, Connection, Message } from "@krubot/shared";
 import { Check, Plug, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ActionCard } from "@/components/action-card";
 import { AppIcon, appName } from "@/components/app-icons";
 import { useLiveEvents } from "@/components/hq/live-events";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { api, post } from "@/lib/api";
@@ -63,12 +63,7 @@ export function ConnectCard({ message, bot, toolkit }: { message: Message; bot: 
   const connected = connection?.status === "active";
 
   return (
-    <Bubble variant="outline" className="max-w-[80%]">
-      <BubbleContent className="flex flex-col gap-2 p-3">
-        <p className="flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
-          <Plug className="size-3.5" aria-hidden="true" />
-          {bot?.name ?? "A bot"} wants to connect an app
-        </p>
+    <ActionCard icon={<Plug className="size-3.5" aria-hidden="true" />} title={`${bot?.name ?? "A bot"} connects an app`}>
         <p className="flex items-center gap-2 text-[13.5px]">
           <AppIcon toolkit={toolkit} logo={app?.logo} size={20} />
           <span className="font-medium">{name}</span>
@@ -100,7 +95,6 @@ export function ConnectCard({ message, bot, toolkit }: { message: Message; bot: 
             <p className="text-[11.5px] text-muted-foreground">You sign in on {name}&apos;s own site; Kru Bot keeps the token and the bots never see it.</p>
           </>
         )}
-      </BubbleContent>
-    </Bubble>
+    </ActionCard>
   );
 }

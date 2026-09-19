@@ -130,8 +130,13 @@ what is here. The README says what Kru Bot is; this says how it is made.
 - **A bot's message is light Markdown** (`lib/markdown.ts`), and a bare URL
   is a link too: agents write them as plain text far more often than as
   `[text](url)`. Anything a person has to act on (a sign-in, a key) is a
-  card, not a link: `secret-card.tsx`, `signin-card.tsx` and
-  `connect-card.tsx` are the three, all answered from the conversation.
+  card, not a link. Every one of them is built on `action-card.tsx`, one
+  shell in the same grey with the same edge as a button or a field: the
+  approval in `conversation.tsx`, then `secret-card.tsx`,
+  `signin-card.tsx` and `connect-card.tsx`. A new kind of card goes there
+  too, so they never drift. What is waiting is said by the buttons inside,
+  never by a colour on the card; the approvals badge in the list carries
+  the amber.
 - **Settings is sections, not a scroll.** `SETTINGS_SECTIONS` in
   `lib/settings-sections.ts` is the list (account, team, ai, computer,
   skills, apps, secrets, auth), each marked `admin` or not; the route

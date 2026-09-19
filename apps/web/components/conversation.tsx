@@ -1,10 +1,11 @@
 "use client";
 
 import { handleOf, type Approval, type Bot, type Message, type Thread } from "@krubot/shared";
-import { ArrowUp, Bot as BotIcon, ChevronLeft, Clock, Download, EllipsisVertical, FileText, PanelRight, Paperclip, Plus, Square, Users, X } from "lucide-react";
+import { ArrowUp, Bot as BotIcon, ChevronLeft, Clock, Download, EllipsisVertical, FileText, PanelRight, Paperclip, Plus, ShieldQuestion, Square, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
+import { ActionCard } from "@/components/action-card";
 import { BotAvatar, YouAvatar } from "@/components/bot-avatar";
 import { ExchangeDialog } from "@/components/exchange-dialog";
 import { pollInterval, useLiveEvents } from "@/components/hq/live-events";
@@ -69,9 +70,7 @@ function ApprovalCard({ message, approval, bot, onDecide }: { message: Message; 
     }
   };
   return (
-    <Bubble variant="outline" className="max-w-[80%]">
-      <BubbleContent className="flex flex-col gap-2 border-amber/40 bg-amber/10 p-3">
-        <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">{bot?.name ?? "A bot"} asks to</p>
+    <ActionCard icon={<ShieldQuestion className="size-3.5" aria-hidden="true" />} title={`${bot?.name ?? "A bot"} asks to`}>
         <p className="font-mono text-[12.5px] leading-5 break-words">{message.body}</p>
         {status === "pending" ? (
           <div className="mt-1 flex flex-wrap gap-2">
@@ -88,8 +87,7 @@ function ApprovalCard({ message, approval, bot, onDecide }: { message: Message; 
         ) : (
           <p className="text-[12px] text-muted-foreground">{status === "allowed" ? (approval?.rule ? `Allowed, and always from now on (${approval.rule}).` : "Allowed.") : status === "denied" ? "Denied." : "Nobody answered in time."}</p>
         )}
-      </BubbleContent>
-    </Bubble>
+    </ActionCard>
   );
 }
 
