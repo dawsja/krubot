@@ -571,7 +571,7 @@ export function Conversation({ threadId }: { threadId: string }) {
               {notice}
             </p>
           ) : null}
-          <div className="relative flex items-end gap-2">
+          <div className="relative flex items-end gap-2.5">
           {slash ? <SlashMenu kind={slash.kind} skills={skills} bots={bots} query={slash.query} selected={slash.selected} onPickSkill={(skill) => insertSkill(skill.slug)} onPickBot={insertBot} /> : null}
           <Tooltip>
             <TooltipTrigger render={<Button size="icon-xl" aria-label="Attach files" render={<label />} nativeButton={false} className="cursor-pointer" />}>
@@ -580,7 +580,8 @@ export function Conversation({ threadId }: { threadId: string }) {
             </TooltipTrigger>
             <TooltipContent>Attach files</TooltipContent>
           </Tooltip>
-          <InputGroup className="min-h-11 rounded-[22px] border-primary-edge pr-1 shadow-(--primary-shadow)">
+          {/* 44px like the circle beside it; the send circle sits 6px in from the pill's edge. */}
+          <InputGroup className="min-h-11 rounded-[22px] border-primary-edge pr-1.5 shadow-(--primary-shadow)">
             <InputGroupTextarea
               ref={textarea}
               value={draft}
@@ -595,11 +596,11 @@ export function Conversation({ threadId }: { threadId: string }) {
               placeholder={bot ? `Message ${bot.name}` : "Message the room"}
               aria-label={bot ? `Message ${bot.name}` : "Message the room"}
               enterKeyHint={touch ? "enter" : "send"}
-              className="max-h-40 min-h-11 px-4 py-3 text-[16px] leading-5 sm:text-[14px]"
+              className="max-h-40 min-h-[42px] px-4 py-2.5 text-[16px] leading-5 sm:text-[14px]"
             />
-            <InputGroupAddon align="inline-end" className="self-end pr-0 pb-1">
+            <InputGroupAddon align="inline-end" className="mr-0 self-end pt-0 pr-0 pb-[5px] has-[>button]:mr-0">
               <Tooltip>
-                <TooltipTrigger render={<InputGroupButton type="submit" variant="control" size="icon-md" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="rounded-full" />}>
+                <TooltipTrigger render={<InputGroupButton type="submit" variant="control" size="icon-sm" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="rounded-full" />}>
                   <SendHorizonal aria-hidden="true" />
                 </TooltipTrigger>
                 <TooltipContent>{touch ? "Send" : "Send (Enter)"}</TooltipContent>
