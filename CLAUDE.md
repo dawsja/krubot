@@ -54,13 +54,14 @@ what is here. The README says what Kru Bot is; this says how it is made.
   several places, change or extend the primitive; `className` on a call
   site is for layout.
 - **Colours are tokens.** One primary for actions: `bg-primary` /
-  `text-primary-foreground`, ink (carbon on paper-white) in the light and a
-  grey in the dark, with `border-primary-edge` as a button's ring. Every
-  main button and your message bubble use it; a bot's bubble is the
-  `outline` variant, which is the darker `bg-muted` in the dark. A control's
-  on state (switch, checkbox, radio, slider, pressed pill) is `bg-control`
-  / `text-control-foreground`, ink in both themes, so on and off always
-  read. The orange brand is an accent only: logo, focus ring, links, unread
+  `text-primary-foreground`, a white pill with a soft shadow in the light
+  and a grey one in the dark (`border-primary-edge` is its ring,
+  `shadow-(--primary-shadow)` its lift). Every main button, the circles on
+  the phone's screens and the bot's name pill use it. Bubbles have their
+  own greys: yours is `bg-bubble-you`, a bot's `bg-bubble-bot`, a step
+  lighter. A control's on state (switch, checkbox, radio, slider, pressed
+  pill) and the Send button (`variant="control"`) are `bg-control` /
+  `text-control-foreground`, ink in both themes, so they always stand out. The orange brand is an accent only: logo, focus ring, links, unread
   dot. Secondary actions are `variant="outline"`, tertiary
   `ghost`, destructive `destructive`. Use `text-muted-foreground`,
   `bg-card`, `bg-muted`, `border` and friends; never raw Tailwind colours,
@@ -71,7 +72,8 @@ what is here. The README says what Kru Bot is; this says how it is made.
 - **Phones first, one screen at a time.** Under `md` the app is a
   messaging app: `/app` is the Chats screen (`chats-screen.tsx`, the same
   list the sidebar draws: your picture top left opens Settings, Search and
-  New are circles top right, Search swaps in the field), a conversation is a full screen with floating
+  New are circles top right, Search swaps in the field; pinned bots are a
+  row of big faces above the list, `PinnedTile` in `sidebar.tsx`), a conversation is a full screen with floating
   pills over the page: a back chevron, the bot (tap it for the details
   sheet, the right panel's content) and a menu with the bot's actions
   (`thread-actions.tsx`, shared with the sidebar's long-press menu; under

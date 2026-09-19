@@ -172,7 +172,7 @@ export function Onboarding() {
                     <AppIcon toolkit={app.toolkit} logo={app.logo} size={22} />
                     <span className="flex-1 truncate text-left">{app.name}</span>
                     {on ? (
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <span className="flex size-5 items-center justify-center rounded-full bg-control text-control-foreground">
                         <Check className="size-3" aria-hidden="true" />
                       </span>
                     ) : null}

@@ -156,8 +156,8 @@ function Line({ message, threadId, bots, threads, bot, approvals, isRoom, onDeci
       <MessageContent className="gap-1">
         {showName ? <MessageHeader>{author?.name ?? (message.author === "routine" ? "Routine" : "Kru Bot")}</MessageHeader> : null}
         <Bubble variant={mine ? "default" : "outline"} align={mine ? "end" : "start"} className="max-w-[86%] sm:max-w-[78%]">
-          <BubbleContent className={cn("rounded-2xl px-3.5 py-2", !mine && "border-transparent bg-card shadow-subtle")}>
-            {message.body ? <Markdown text={message.body} className={cn("flex flex-col gap-2 text-[14px] leading-6", mine && "[&_code]:bg-primary-foreground/15 [&_code]:text-primary-foreground")} /> : null}
+          <BubbleContent className="rounded-2xl px-3.5 py-2">
+            {message.body ? <Markdown text={message.body} className={cn("flex flex-col gap-2 text-[14px] leading-6", mine && "[&_code]:bg-foreground/10 [&_code]:text-foreground")} /> : null}
             {message.attachments.length ? (
               <AttachmentGroup className={cn(message.body && "mt-2")}>
                 {message.attachments.map((file) =>
@@ -580,7 +580,7 @@ export function Conversation({ threadId }: { threadId: string }) {
             </TooltipTrigger>
             <TooltipContent>Attach files</TooltipContent>
           </Tooltip>
-          <InputGroup className="min-h-11 rounded-[22px] pr-1">
+          <InputGroup className="min-h-11 rounded-[22px] border-primary-edge pr-1 shadow-(--primary-shadow)">
             <InputGroupTextarea
               ref={textarea}
               value={draft}
@@ -599,7 +599,7 @@ export function Conversation({ threadId }: { threadId: string }) {
             />
             <InputGroupAddon align="inline-end" className="self-end pr-0 pb-1">
               <Tooltip>
-                <TooltipTrigger render={<InputGroupButton type="submit" variant="default" size="icon-md" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="rounded-full" />}>
+                <TooltipTrigger render={<InputGroupButton type="submit" variant="control" size="icon-md" aria-label="Send" disabled={sending || (!draft.trim() && !files.length)} className="rounded-full" />}>
                   <SendHorizonal aria-hidden="true" />
                 </TooltipTrigger>
                 <TooltipContent>{touch ? "Send" : "Send (Enter)"}</TooltipContent>

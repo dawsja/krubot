@@ -4,7 +4,7 @@ import { handleOf, type Bot, type Message } from "@krubot/shared";
 import { MessageSquareText, Pin, Plus, Search, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { BotAvatar, PersonAvatar } from "@/components/bot-avatar";
 import { KruBot } from "@/components/hq/kru-bot";
 import { ProfileMenu } from "@/components/profile-menu";
@@ -50,14 +50,47 @@ function preview(thread: ThreadRow, bots: Bot[], activity: Record<string, string
  * open its computer, duplicate, clear, delete) is on its right-click menu,
  * a long press on a phone; a room gets clear and delete.
  */
-function Row({ thread, bot, active, bots, activity, onOpen, onAsk }: { thread: ThreadRow; bot: Bot | undefined; active: boolean; bots: Bot[]; activity: Record<string, string>; onOpen: (dialog: ShellDialog) => void; onAsk: (ask: Ask) => void }) {
-  const { setOpenMobile } = useSidebar();
+function ThreadMenu({ thread, bot, onOpen, onAsk, trigger, children }: { thread: ThreadRow; bot: Bot | undefined; onOpen: (dialog: ShellDialog) => void; onAsk: (ask: Ask) => void; trigger: ReactElement; children: ReactNode }) {
   const { refresh, admin } = useStore();
-  const working = Object.keys(activity).length > 0;
   const groups = threadActions({ thread, bot, admin, onOpen, onAsk, refresh });
   return (
     <ContextMenu>
-      <ContextMenuTrigger render={<SidebarMenuItem />}>
+      <ContextMenuTrigger render={trigger}>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="w-52">
+        {groups.map((group, i) => (
+          <ContextMenuGroup key={i} className={cn(i > 0 && "border-t pt-1 mt-1")}>
+            {group.map((action) => (
+              <ContextMenuItem key={action.id} variant={action.destructive ? "destructive" : "default"} onClick={action.run}>
+                <action.icon aria-hidden="true" />
+                {action.label}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuGroup>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/** A pinned bot: its face, large, in the row at the top; the same long-press menu. */
+function PinnedTile({ thread, bot, active, onOpen, onAsk }: { thread: ThreadRow; bot: Bot; active: boolean; onOpen: (dialog: ShellDialog) => void; onAsk: (ask: Ask) => void }) {
+  const { setOpenMobile } = useSidebar();
+  return (
+    <ThreadMenu thread={thread} bot={bot} onOpen={onOpen} onAsk={onAsk} trigger={<li className="list-none" />}>
+      <Link href={`/app/t/${thread.id}`} aria-current={active ? "page" : undefined} onClick={() => setOpenMobile(false)} className="relative flex w-22 flex-col items-center gap-1.5 rounded-2xl py-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+        <BotAvatar bot={bot} size={64} />
+        <span className={cn("max-w-full truncate text-[13px]", active ? "font-medium text-foreground" : "text-muted-foreground")}>{bot.name}</span>
+        {thread.unread > 0 && !active ? <span className="absolute top-2 right-3 size-2.5 rounded-full ring-2 ring-background" style={{ background: bot.color }} aria-label={`${thread.unread} unread`} /> : null}
+      </Link>
+    </ThreadMenu>
+  );
+}
+
+function Row({ thread, bot, active, bots, activity, onOpen, onAsk }: { thread: ThreadRow; bot: Bot | undefined; active: boolean; bots: Bot[]; activity: Record<string, string>; onOpen: (dialog: ShellDialog) => void; onAsk: (ask: Ask) => void }) {
+  const { setOpenMobile } = useSidebar();
+  const working = Object.keys(activity).length > 0;
+  return (
+    <ThreadMenu thread={thread} bot={bot} onOpen={onOpen} onAsk={onAsk} trigger={<SidebarMenuItem />}>
         <SidebarMenuButton size="lg" isActive={active} render={<Link href={`/app/t/${thread.id}`} aria-current={active ? "page" : undefined} onClick={() => setOpenMobile(false)} />} className="h-16 gap-3 rounded-xl px-2.5 data-active:bg-card data-active:shadow-subtle hover:bg-card/60 wide:h-14">
           {bot ? (
             <BotAvatar bot={bot} size={40} />
@@ -87,20 +120,7 @@ function Row({ thread, bot, active, bots, activity, onOpen, onAsk }: { thread: T
             </span>
           </span>
         </SidebarMenuButton>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-52">
-        {groups.map((group, i) => (
-          <ContextMenuGroup key={i} className={cn(i > 0 && "border-t pt-1 mt-1")}>
-            {group.map((action) => (
-              <ContextMenuItem key={action.id} variant={action.destructive ? "destructive" : "default"} onClick={action.run}>
-                <action.icon aria-hidden="true" />
-                {action.label}
-              </ContextMenuItem>
-            ))}
-          </ContextMenuGroup>
-        ))}
-      </ContextMenuContent>
-    </ContextMenu>
+    </ThreadMenu>
   );
 }
 
@@ -196,6 +216,12 @@ export function ApprovalsBadge({ className }: { className?: string }) {
 export function BotRows({ rows, hits, query, setQuery, onOpen, onAsk }: { rows: ThreadRow[]; hits: Message[]; query: string; setQuery: (q: string) => void; onOpen: (dialog: ShellDialog) => void; onAsk: (ask: Ask) => void }): ReactNode {
   const { bots, threads, activity, loaded } = useStore();
   const pathname = usePathname();
+  const pinned = query.trim()
+    ? []
+    : rows.flatMap((thread) => {
+        const bot = thread.botId ? bots.find((b) => b.id === thread.botId) : undefined;
+        return bot?.pinned ? [{ thread, bot }] : [];
+      });
   return (
     <>
       {!loaded ? (
@@ -220,11 +246,21 @@ export function BotRows({ rows, hits, query, setQuery, onOpen, onAsk }: { rows: 
           </EmptyContent>
         </Empty>
       ) : (
+        <>
+          {/* Pinned bots sit above the list as big faces, like a favourites row; a search lists everyone. */}
+          {pinned.length ? (
+            <ul className="mb-1 flex flex-wrap justify-center gap-x-1 gap-y-2 px-1 pt-2 pb-3" aria-label="Pinned bots">
+              {pinned.map(({ thread, bot }) => (
+                <PinnedTile key={thread.id} thread={thread} bot={bot} active={pathname === `/app/t/${thread.id}`} onOpen={onOpen} onAsk={onAsk} />
+              ))}
+            </ul>
+          ) : null}
         <SidebarMenu className="gap-0.5" aria-label="Bots">
-          {rows.map((thread) => (
+          {(pinned.length ? rows.filter((t) => !pinned.some((p) => p.thread.id === t.id)) : rows).map((thread) => (
             <Row key={thread.id} thread={thread} bot={thread.botId ? bots.find((b) => b.id === thread.botId) : undefined} active={pathname === `/app/t/${thread.id}`} bots={bots} activity={activity[thread.id] ?? {}} onOpen={onOpen} onAsk={onAsk} />
           ))}
         </SidebarMenu>
+        </>
       )}
       {hits.length ? (
         <div className="mt-3">

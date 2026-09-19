@@ -57,6 +57,8 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-primary-edge: var(--primary-edge);
+  --color-bubble-you: var(--bubble-you);
+  --color-bubble-bot: var(--bubble-bot);
   --color-control-foreground: var(--control-foreground);
   --color-control: var(--control);
   --color-popover-foreground: var(--popover-foreground);
@@ -157,14 +159,21 @@
    * has one obvious "do it" colour in either theme. The orange brand is an
    * accent only: the logo, the focus ring, links and the unread dot.
    */
-  --primary: var(--carbon);
-  --primary-foreground: var(--paper-white);
-  /* The edge of a primary button: the fill itself here, a lighter ring in the dark. */
-  --primary-edge: var(--primary);
   /*
-   * A control's "on" state (switch, checkbox, radio, slider, pressed pill)
-   * is ink in both themes, so on and off always read; in the dark the
-   * primary is grey and would not.
+   * The primary is a white pill with a soft shadow in the light and a grey
+   * one in the dark: buttons, the circles on the phone's screens and the
+   * bot's name in a conversation float on the page. Your message bubble
+   * and a bot's have their own greys (--bubble-you a step darker).
+   */
+  --primary: var(--paper-white);
+  --primary-foreground: var(--carbon);
+  --primary-edge: #ebe8e1;
+  --primary-shadow: 0 1px 2px rgba(20, 16, 8, 0.06), 0 2px 8px rgba(20, 16, 8, 0.06);
+  --bubble-you: #dfdbd3;
+  --bubble-bot: #ebe8e1;
+  /*
+   * A control's "on" state (switch, checkbox, radio, slider, pressed pill,
+   * the send button) is ink in both themes, so on and off always read.
    */
   --control: var(--carbon);
   --control-foreground: var(--paper-white);
@@ -235,14 +244,15 @@
   --popover: #232327;
   --popover-foreground: var(--carbon);
   /*
-   * In the dark the primary is a grey, not white: buttons, the + and
-   * Search circles and your message bubble sit as darker shapes on the
-   * page (a bot's bubble is the darker --muted), with a lighter ring on a
+   * In the dark the primary is a grey, not white, with a lighter ring on a
    * button so it stays crisp. Ink is kept for --control.
    */
   --primary: #34343a;
   --primary-foreground: var(--carbon);
   --primary-edge: #4a4a52;
+  --primary-shadow: none;
+  --bubble-you: #34343a;
+  --bubble-bot: #1c1c1f;
   --control: var(--carbon);
   --control-foreground: var(--paper-white);
   --secondary: var(--mist);
