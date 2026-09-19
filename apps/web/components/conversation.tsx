@@ -455,7 +455,7 @@ export function Conversation({ threadId }: { threadId: string }) {
             <ChevronLeft aria-hidden="true" />
           </Button>
           <h1 className="sr-only">{info?.thread.name ?? "Conversation"}</h1>
-          <Button size="xl" onClick={() => setDetails(true)} aria-label="Details" className="pointer-events-auto min-w-0 max-w-full gap-2 pl-1.5 text-left xwide:pointer-events-none">
+          <Button size="xl" onClick={() => setDetails(true)} aria-label="Details" className="pointer-events-auto min-w-0 shrink gap-2 pl-1.5 text-left xwide:pointer-events-none">
             {bot ? <BotAvatar bot={bot} size={32} /> : <Users className="ml-2 size-5" aria-hidden="true" />}
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-[15px] leading-5 font-semibold">{info?.thread.name ?? "…"}</span>
@@ -466,8 +466,9 @@ export function Conversation({ threadId }: { threadId: string }) {
             </span>
           </Button>
           <span className="flex-1" />
+          {/* Filled, like the pills beside it: an outline is transparent, and the messages run under this header. */}
           {busy ? (
-            <Button variant="outline" size="sm" onClick={() => void post(`/api/threads/${threadId}/interrupt`)} className="pointer-events-auto">
+            <Button size="lg" onClick={() => void post(`/api/threads/${threadId}/interrupt`)} className="pointer-events-auto shrink-0">
               <Square className="fill-current" data-icon="inline-start" aria-hidden="true" />
               Stop
             </Button>
