@@ -85,7 +85,9 @@ what is here. The README says what Kru Bot is; this says how it is made.
   row of big faces above the list, `PinnedTile` in `sidebar.tsx`), a conversation is a full screen with floating
   pills over the page, never a bar: the header is absolute and the messages
   scroll under it, so only the pills themselves cover what was said (the
-  strip between them is `pointer-events-none`). They are a back chevron,
+  strip between them is `pointer-events-none`). The scroller is
+  `scroll-fade-y`: both edges fade, and each one retracts as you reach it,
+  so the newest message and the first are never cut off. They are a back chevron,
   the bot (tap it for the details sheet, the right panel's content) and a
   menu with the bot's actions
   (`thread-actions.tsx`, shared with the sidebar's long-press menu; under
