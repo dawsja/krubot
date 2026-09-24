@@ -2,6 +2,7 @@ import type { Engine, EngineSignIn, EngineStatus, ModelChoice } from "@krubot/sh
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { getUser, isAdmin } from "./data/users.ts";
+import type { StepUpdate } from "./work.ts";
 
 /*
  * Client for the box (packages/box/server.mjs): the computer every bot
@@ -384,6 +385,8 @@ export type AgentEvent =
   | { type: "line"; line: string }
   /** Codex and Grok: an activity line the box already put in words. */
   | { type: "activity"; line: string }
+  /** Codex and Grok: a step of the work log, begun or finished (see work.ts). */
+  | { type: "step"; step: StepUpdate }
   | { type: "tool_call"; callId: string; name: string; input: Record<string, unknown> }
   | AgentTurnResult
   | { type: "error"; missing: boolean; message: string };

@@ -1,7 +1,7 @@
 "use client";
 
 import { handleOf, type Approval, type Bot, type Message, type Thread } from "@krubot/shared";
-import { ArrowUp, Bot as BotIcon, ChevronLeft, Clock, Copy, Download, ListEnd, EllipsisVertical, FileText, PanelRight, Paperclip, Plus, RotateCcw, ShieldQuestion, Sparkles, Square, Users, X } from "lucide-react";
+import { ArrowUp, Bot as BotIcon, ChevronLeft, Clock, Copy, Download, ListEnd, EllipsisVertical, FileText, PanelRight, Paperclip, Pencil, Plus, RotateCcw, ShieldQuestion, Sparkles, Square, TextSelect, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
@@ -26,6 +26,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group";
@@ -34,6 +35,7 @@ import { Message as MessageRow, MessageAvatar, MessageContent, MessageFooter, Me
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport, useMessageScroller } from "@/components/ui/message-scroller";
 import { toast } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useWork, WorkLine } from "@/components/work-log";
 import { useCoarsePointer } from "@/hooks/use-mobile";
 import { useSwipeBack } from "@/hooks/use-swipe-back";
 import { api, post } from "@/lib/api";
@@ -57,7 +59,7 @@ const POLL_MS = 4_000;
 const PAGE = 200;
 const MAX_FILES = 6;
 
-type ThreadInfo = { thread: Thread; bot: Bot | null; busy: string[] };
+type ThreadInfo = { thread: Thread; bot: Bot | null; busy: string[]; /** The messages the running turns are answering. */ answering?: string[] };
 type Decision = "allow" | "deny" | "always";
 
 function formatBytes(n: number) {
@@ -123,8 +125,124 @@ function Handoff({ message, threadId, bots, threads, onOpen }: { message: Messag
   );
 }
 
-function Line({ message, threadId, bots, threads, bot, approvals, isRoom, onDecide, onOpenExchange, onResend, onMakeSkill }: { message: Message; threadId: string; bots: Bot[]; threads: ThreadRow[]; bot: Bot | null; approvals: Map<string, Approval>; isRoom: boolean; onDecide: (id: string, decision: Decision) => Promise<void>; onOpenExchange: (withThreadId: string) => void; onResend: (message: Message) => void; onMakeSkill: (message: Message, author: Bot) => void }) {
+/** The text selected inside an element, if the selection is all within it. */
+function selectionIn(node: HTMLElement | null): string {
+  const selection = typeof window === "undefined" ? null : window.getSelection();
+  if (!node || !selection || selection.isCollapsed || !selection.rangeCount) return "";
+  const range = selection.getRangeAt(0);
+  return node.contains(range.commonAncestorContainer) ? selection.toString() : "";
+}
+
+/**
+ * One of your messages, being edited in place: the words in a field where
+ * the bubble was, then Cancel or Send. Sending posts it again as you fixed
+ * it (see `resendEdited`), since the bot has already read the first one.
+ */
+function EditBubble({ message, touch, stops, onCancel, onSend }: { message: Message; touch: boolean; /** A bot is working on this very message: sending stops that work first. */ stops: boolean; onCancel: () => void; onSend: (text: string) => Promise<boolean> }) {
+  const [text, setText] = useState(message.body);
+  const [sending, setSending] = useState(false);
+  const field = useRef<HTMLTextAreaElement>(null);
+  // Editing is asked for, so the field takes the focus, with the caret at the end.
+  useEffect(() => {
+    const node = field.current;
+    if (!node) return;
+    node.focus();
+    node.setSelectionRange(node.value.length, node.value.length);
+  }, []);
+  const changed = text.trim() && text.trim() !== message.body.trim();
+  async function submit() {
+    if (!changed || sending) return;
+    setSending(true);
+    const ok = await onSend(text.trim());
+    if (!ok) setSending(false);
+  }
+  return (
+    <form
+      className="flex w-full max-w-[86%] flex-col items-end gap-2 self-end sm:max-w-[78%]"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <InputGroup variant="pill" className="w-full rounded-2xl">
+        <InputGroupTextarea
+          ref={field}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel();
+            } else if (e.key === "Enter" && !e.shiftKey && !touch && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+          aria-label="Edit your message"
+          enterKeyHint={touch ? "enter" : "send"}
+          className="max-h-60 min-h-11 px-3.5 py-2.5 text-[16px] leading-6 sm:text-[14px]"
+        />
+      </InputGroup>
+      {/* The first message stays: the bot has read it. Say what sending does. */}
+      <p className="px-1 text-right text-[11.5px] text-muted-foreground">{stops ? "Sending stops the work here, then starts again with your fix." : "Sent again as a new message."}</p>
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={sending} className="pointer-coarse:h-11 pointer-coarse:px-4">
+          Cancel
+        </Button>
+        <Button type="submit" size="sm" disabled={!changed || sending} className="pointer-coarse:h-11 pointer-coarse:px-4">
+          {sending ? "Sending…" : stops ? "Stop and send" : "Send"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * A message's words on their own, to select any part of them: what "Select
+ * text" opens on a touch screen, where a long press is the message's menu.
+ */
+function SelectTextDialog({ text, onClose }: { text: string | null; onClose: () => void }) {
+  return (
+    <Dialog open={text !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Select text</DialogTitle>
+          <DialogDescription>Press and hold a word, then drag to pick the part you want.</DialogDescription>
+        </DialogHeader>
+        <div className="scroll-fade-y max-h-[55dvh] overflow-y-auto rounded-2xl bg-muted px-3.5 py-3 select-text">
+          <Markdown text={text ?? ""} className="flex flex-col gap-2 text-[15px] leading-6 wrap-break-word" />
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() =>
+              void copyToClipboard(text ?? "").then((ok) => {
+                toast.add(ok ? { title: "Copied." } : { type: "error", title: "Couldn't copy it." });
+                if (ok) onClose();
+              })
+            }
+          >
+            <Copy data-icon="inline-start" aria-hidden="true" />
+            Copy all
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Line({ message, threadId, bots, threads, bot, approvals, isRoom, editing, stops, touch, onDecide, onOpenExchange, onResend, onMakeSkill, onEdit, onSelectText }: { message: Message; threadId: string; bots: Bot[]; threads: ThreadRow[]; bot: Bot | null; approvals: Map<string, Approval>; isRoom: boolean; editing: boolean; stops: boolean; touch: boolean; onDecide: (id: string, decision: Decision) => Promise<void>; onOpenExchange: (withThreadId: string) => void; onResend: (message: Message) => void; onMakeSkill: (message: Message, author: Bot) => void; onEdit: (message: Message | null, text?: string) => Promise<boolean>; onSelectText: (text: string) => void }) {
   const mine = message.author === "you";
+  const bubble = useRef<HTMLDivElement>(null);
+  // Right-click with some of it selected offers to copy what is selected, as well as the lot.
+  const [selected, setSelected] = useState("");
+  // After Cancel, focus goes back to the pencil that opened the editor, not to the page.
+  const pencil = useRef<HTMLButtonElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (editing || !refocus.current) return;
+    refocus.current = false;
+    pencil.current?.focus();
+  }, [editing]);
   const author = mine ? null : bots.find((b) => b.id === message.author) ?? null;
   if (message.kind === "prompt") return null;
   if (message.kind === "message" && message.fromThreadId && author) return <Handoff message={message} threadId={threadId} bots={bots} threads={threads} onOpen={onOpenExchange} />;
@@ -159,16 +277,39 @@ function Line({ message, threadId, bots, threads, bot, approvals, isRoom, onDeci
   const resendable = mine && Boolean(message.body.trim()) && message.attachments.length === 0;
   // A bot's work you liked becomes a skill: it packages how it did it, scripts and all.
   const skillable = Boolean(author) && Boolean(message.body.trim());
+  if (editing) {
+    return (
+      <MessageRow align="end">
+        <MessageAvatar className="bg-transparent">{avatar}</MessageAvatar>
+        <MessageContent className="gap-1">
+          <EditBubble
+            message={message}
+            touch={touch}
+            stops={stops}
+            onCancel={() => {
+              refocus.current = true;
+              void onEdit(null);
+            }}
+            onSend={(text) => onEdit(message, text)}
+          />
+        </MessageContent>
+      </MessageRow>
+    );
+  }
   return (
     <MessageRow align={mine ? "end" : "start"}>
       <MessageAvatar className="bg-transparent">{avatar}</MessageAvatar>
       <MessageContent className="gap-1">
         {showName ? <MessageHeader>{author?.name ?? (message.author === "routine" ? "Routine" : "Kru Bot")}</MessageHeader> : null}
-        {/* Right-click, or a long press on a touch screen, for what can be done with it. */}
-        <ContextMenu>
-        <ContextMenuTrigger render={<Bubble variant={mine ? "default" : "outline"} align={mine ? "end" : "start"} className="max-w-[86%] sm:max-w-[78%]" />}>
+        {/*
+         * Right-click, or a long press on a touch screen, for what can be done
+         * with it. The words stay selectable with a mouse; on a touch screen,
+         * where the long press is this menu, "Select text" opens them on their own.
+         */}
+        <ContextMenu onOpenChange={(open) => setSelected(open ? selectionIn(bubble.current) : "")}>
+        <ContextMenuTrigger ref={bubble} className="select-text pointer-coarse:select-none" render={<Bubble variant={mine ? "default" : "outline"} align={mine ? "end" : "start"} className="max-w-[86%] sm:max-w-[78%]" />}>
           <BubbleContent className="rounded-2xl px-3.5 py-2">
-            {message.body ? <Markdown text={message.body} className={cn("flex flex-col gap-2 text-[14px] leading-6", mine && "[&_code]:bg-foreground/10 [&_code]:text-foreground")} /> : null}
+            {message.body ? <Markdown text={message.body} className="flex flex-col gap-2 text-[14px] leading-6" /> : null}
             {message.attachments.length ? (
               <AttachmentGroup className={cn(message.body && "mt-2")}>
                 {message.attachments.map((file) =>
@@ -207,6 +348,12 @@ function Line({ message, threadId, bots, threads, bot, approvals, isRoom, onDeci
           {message.body || resendable ? (
             <ContextMenuContent className="w-52">
               <ContextMenuGroup>
+                {selected ? (
+                  <ContextMenuItem onClick={() => void copyToClipboard(selected).then((ok) => toast.add(ok ? { title: "Copied." } : { type: "error", title: "Couldn't copy it." }))}>
+                    <TextSelect aria-hidden="true" />
+                    Copy selection
+                  </ContextMenuItem>
+                ) : null}
                 {message.body ? (
                   <ContextMenuItem
                     onClick={() =>
@@ -215,6 +362,18 @@ function Line({ message, threadId, bots, threads, bot, approvals, isRoom, onDeci
                   >
                     <Copy aria-hidden="true" />
                     Copy text
+                  </ContextMenuItem>
+                ) : null}
+                {message.body && touch ? (
+                  <ContextMenuItem onClick={() => onSelectText(message.body)}>
+                    <TextSelect aria-hidden="true" />
+                    Select text
+                  </ContextMenuItem>
+                ) : null}
+                {resendable ? (
+                  <ContextMenuItem onClick={() => void onEdit(message)}>
+                    <Pencil aria-hidden="true" />
+                    Edit and resend
                   </ContextMenuItem>
                 ) : null}
                 {resendable ? (
@@ -239,9 +398,22 @@ function Line({ message, threadId, bots, threads, bot, approvals, isRoom, onDeci
           {/* On a touch screen the long press is the way; with a mouse, hovering shows these. */}
           {message.body ? <CopyButton text={message.body} label="Copy text" className="size-6 opacity-0 group-hover/message:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden" /> : null}
           {resendable ? (
-            <Button variant="ghost" size="icon-xs" aria-label="Send again" onClick={() => onResend(message)} className="opacity-0 group-hover/message:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden">
-              <RotateCcw aria-hidden="true" />
-            </Button>
+            <Tooltip>
+              {/* The one always there on a touch screen: fixing what you sent is the common need. */}
+              {/* 44px to a thumb, pulled into the footer's line so the row doesn't grow. */}
+              <TooltipTrigger render={<Button ref={pencil} variant="ghost" size="icon-xs" aria-label="Edit and resend" onClick={() => void onEdit(message)} className="opacity-0 group-hover/message:opacity-100 focus-visible:opacity-100 pointer-coarse:-my-3 pointer-coarse:size-11 pointer-coarse:opacity-100" />}>
+                <Pencil aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent>Edit and resend</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {resendable ? (
+            <Tooltip>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-xs" aria-label="Send again" onClick={() => onResend(message)} className="opacity-0 group-hover/message:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden" />}>
+                <RotateCcw aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent>Send again</TooltipContent>
+            </Tooltip>
           ) : null}
           {skillable && author ? (
             <Tooltip>
@@ -330,6 +502,10 @@ export function Conversation({ threadId }: { threadId: string }) {
   const skills = useSkillsLibrary();
   const [slash, setSlash] = useState<{ kind: "skill" | "bot"; query: string; start: number; selected: number } | null>(null);
   const [exchange, setExchange] = useState<string | null>(null);
+  // Which of your messages is open for editing, and a message's words opened to select on a touch screen.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [selectText, setSelectText] = useState<string | null>(null);
+  const work = useWork(threadId);
   const [resolved, setResolved] = useState<Map<string, Approval>>(new Map());
   const textarea = useRef<HTMLTextAreaElement>(null);
   const cursor = useRef<string | null>(null);
@@ -496,6 +672,42 @@ export function Conversation({ threadId }: { threadId: string }) {
     } catch (failure) {
       toast.add({ type: "error", title: failure instanceof Error ? failure.message : "Couldn't send it again." });
     }
+  }
+
+  /**
+   * Your message, fixed and sent again. The bot has already read the first
+   * one, so the fix is a new message rather than a rewrite of history. If a
+   * bot is working on the very message you fixed, that work stops first
+   * (the button says so) and the fix starts it again; if bots are busy with
+   * something else, the fix waits for them rather than steering that work.
+   */
+  async function resendEdited(message: Message, text: string): Promise<boolean> {
+    const working = Object.keys(activity[threadId] ?? {}).length > 0 || Boolean(info?.busy.length);
+    const stops = Boolean(info?.answering?.includes(message.id));
+    try {
+      if (stops) await post(`/api/threads/${threadId}/interrupt`);
+      const data = await api<{ message: Message }>(`/api/threads/${threadId}/messages`, { method: "POST", body: JSON.stringify({ body: text, ...(working && !stops ? { after: true } : {}) }) });
+      append([data.message]);
+      setEditing(null);
+      void loadInfo();
+      return true;
+    } catch (failure) {
+      toast.add({ type: "error", title: failure instanceof Error ? failure.message : "Couldn't send it." });
+      return false;
+    }
+  }
+
+  /** Opens a message for editing (null closes it), or sends the edit. */
+  async function edit(message: Message | null, text?: string): Promise<boolean> {
+    if (!message) {
+      setEditing(null);
+      return true;
+    }
+    if (text === undefined) {
+      setEditing(message.id);
+      return true;
+    }
+    return resendEdited(message, text);
   }
 
   /** Asks the bot that wrote a message to package how it did it as a skill, for every one of your bots. */
@@ -713,20 +925,15 @@ export function Conversation({ threadId }: { threadId: string }) {
                 ) : null}
                 {messages.map((m) => (
                   <MessageScrollerItem key={m.id} messageId={m.id} scrollAnchor={m.author === "you"} className={cn(m.id === jumpTo && "rounded-2xl ring-2 ring-ring/40")}>
-                    <Line message={m} threadId={threadId} bots={bots} threads={threads} bot={bot} approvals={approvalMap} isRoom={Boolean(isRoom)} onDecide={decide} onOpenExchange={setExchange} onResend={resend} onMakeSkill={makeSkill} />
+                    <Line message={m} threadId={threadId} bots={bots} threads={threads} bot={bot} approvals={approvalMap} isRoom={Boolean(isRoom)} editing={editing === m.id} stops={Boolean(info?.answering?.includes(m.id))} touch={touch} onDecide={decide} onOpenExchange={setExchange} onResend={resend} onMakeSkill={makeSkill} onEdit={edit} onSelectText={setSelectText} />
                   </MessageScrollerItem>
                 ))}
-                {Object.entries(working).map(([botId, line]) => {
-                  const b = bots.find((x) => x.id === botId);
-                  return (
-                    <MessageScrollerItem key={`working-${botId}`}>
-                      <Marker>
-                        {b ? <BotAvatar bot={b} size={22} /> : null}
-                        <MarkerContent className="shimmer truncate font-mono text-[12px]">{line}</MarkerContent>
-                      </Marker>
-                    </MessageScrollerItem>
-                  );
-                })}
+                {/* A working bot's line opens into what it has done so far: every command and what it printed. */}
+                {Object.entries(working).map(([botId, line]) => (
+                  <MessageScrollerItem key={`working-${botId}`}>
+                    <WorkLine bot={bots.find((x) => x.id === botId)} line={line} steps={work[botId] ?? []} />
+                  </MessageScrollerItem>
+                ))}
               </MessageScrollerContent>
             </MessageScrollerViewport>
             <MessageScrollerButton />
@@ -826,6 +1033,7 @@ export function Conversation({ threadId }: { threadId: string }) {
       {panel && info ? <RightPanel thread={info.thread} bot={bot} working={busy} /> : null}
       {info ? <DetailsSheet open={details} onOpenChange={setDetails} thread={info.thread} bot={bot} working={busy} /> : null}
       <ThreadConfirms ask={ask} onClose={() => setAsk(null)} />
+      <SelectTextDialog text={selectText} onClose={() => setSelectText(null)} />
 
       {exchange ? <ExchangeDialog threadId={threadId} withThreadId={exchange} onClose={() => setExchange(null)} /> : null}
     </div>

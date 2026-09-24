@@ -759,6 +759,32 @@ export type BoxUpdate = {
   kind: "update" | "reset";
 };
 
+// ---------- work log ----------
+
+/**
+ * One thing a bot did while it worked, behind its activity line: a command
+ * it ran and what that printed, a file it read or changed, a tool it
+ * called, or what it said on the way. Kept by the API only while the turn
+ * runs; every field is redacted like the line itself.
+ */
+export type WorkStep = {
+  id: string;
+  kind: "command" | "file" | "tool" | "note";
+  /** The one line the activity line showed for it. */
+  title: string;
+  /** The whole command, or the tool's input, when the title cut it short. */
+  detail: string | null;
+  /** What it printed or answered, cut at WORK_OUTPUT_MAX. */
+  output: string | null;
+  status: "running" | "done" | "failed";
+  at: string;
+};
+
+/** Longest output a work step keeps; the rest is cut. */
+export const WORK_OUTPUT_MAX = 8_000;
+/** Steps kept per bot and turn; the oldest go first. */
+export const WORK_STEPS_MAX = 200;
+
 // ---------- live events ----------
 
 export type LiveEvent =
@@ -768,6 +794,8 @@ export type LiveEvent =
   | { topic: "thread"; threadId: string; cleared?: true }
   /** A bot's live activity while it works: the line, or null when the turn ended. */
   | { topic: "activity"; threadId: string; botId: string; line: string | null }
+  /** A step of a bot's work began or finished: the step as it now stands (see WorkStep). */
+  | { topic: "work"; threadId: string; botId: string; step: WorkStep }
   /** Approvals changed. */
   | { topic: "approvals" }
   /** Routines or connections changed. */

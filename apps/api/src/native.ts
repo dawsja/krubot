@@ -1,5 +1,6 @@
 import { isOpenAiShaped, type ProviderKind } from "@krubot/shared";
 import type { DriverTool } from "./driver.ts";
+import type { StepUpdate } from "./work.ts";
 import { authHeaders, upstreamUrl } from "./routes/llm.ts";
 
 /*
@@ -45,6 +46,8 @@ export type NativeTurn = {
   signal?: AbortSignal;
   /** What it is doing, for the activity line. */
   onLog?: (line: string) => void;
+  /** Each call whole, and what it answered: the work log behind the line. */
+  onStep?: (step: StepUpdate) => void;
   /** What the person sends while it works, read between steps. */
   steers?: SteerQueue;
 };
@@ -250,6 +253,7 @@ export async function nativeTurn(turn: NativeTurn): Promise<NativeResult> {
       usage.cachedInput += answer.usage.cachedInput;
     }
     if (answer.text && turn.onLog) turn.onLog(answer.text.replace(/\s+/g, " ").slice(0, 200));
+    if (answer.text.trim() && answer.calls.length) turn.onStep?.({ id: `note-${crypto.randomUUID()}`, kind: "note", title: answer.text.trim().replace(/\s+/g, " ").slice(0, 200), detail: answer.text.trim(), status: "done" });
     if (!answer.calls.length) {
       const late = turn.steers?.last() ?? [];
       if (late.length) {
@@ -264,13 +268,25 @@ export async function nativeTurn(turn: NativeTurn): Promise<NativeResult> {
     const answers = await Promise.all(
       answer.calls.map(async (call) => {
         turn.onLog?.(describe(call));
+        const command = call.name === "Bash" && typeof call.input.command === "string" ? call.input.command : null;
+        turn.onStep?.({
+          id: call.id,
+          kind: command !== null ? "command" : typeof call.input.file_path === "string" ? "file" : "tool",
+          title: describe(call),
+          detail: command ?? (Object.keys(call.input).length ? JSON.stringify(call.input, null, 2) : null),
+          status: "running",
+        });
         const tool = turn.tools[call.name];
         try {
           if (!tool) throw new Error(`No such tool: ${call.name}`);
           const value = await tool.execute(call.input, call.id);
-          return toolAnswer(kind, call, clip(typeof value === "string" ? value : JSON.stringify(value ?? "")), false);
+          const text = typeof value === "string" ? value : JSON.stringify(value ?? "");
+          turn.onStep?.({ id: call.id, output: text, status: "done" });
+          return toolAnswer(kind, call, clip(text), false);
         } catch (error) {
-          return toolAnswer(kind, call, clip(error instanceof Error ? error.message : "Tool failed"), true);
+          const text = error instanceof Error ? error.message : "Tool failed";
+          turn.onStep?.({ id: call.id, output: text, status: "failed" });
+          return toolAnswer(kind, call, clip(text), true);
         }
       }),
     );

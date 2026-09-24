@@ -60,6 +60,7 @@
   --color-primary-edge-focus: var(--primary-edge-focus);
   --color-bubble-you: var(--bubble-you);
   --color-bubble-bot: var(--bubble-bot);
+  --color-bubble-inset: var(--bubble-inset);
   --color-control-foreground: var(--control-foreground);
   --color-control: var(--control);
   --color-popover-foreground: var(--popover-foreground);
@@ -178,6 +179,8 @@
   --primary-shadow: none;
   --bubble-you: #dfdbd3;
   --bubble-bot: #ebe8e1;
+  /* What sits inside a bubble a step off it (inline code, a table's head, a callout), in either bubble. */
+  --bubble-inset: color-mix(in oklch, var(--foreground) 7%, transparent);
   /*
    * A control's "on" state (switch, checkbox, radio, slider, pressed pill,
    * the send button) is ink in both themes, so on and off always read.
@@ -261,6 +264,7 @@
   --primary-shadow: none;
   --bubble-you: #34343a;
   --bubble-bot: #1c1c1f;
+  --bubble-inset: color-mix(in oklch, var(--foreground) 8%, transparent);
   --control: var(--carbon);
   --control-foreground: var(--paper-white);
   --secondary: var(--mist);

@@ -5,8 +5,8 @@ import { Search, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppIcon, appName } from "@/components/app-icons";
+import { BotAccessMenu } from "@/components/bot-access";
 import { useLiveEvents } from "@/components/hq/live-events";
-import { useStore } from "@/components/store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +26,6 @@ import { api, del, post } from "@/lib/api";
  * (`/api/catalog?q=`), so a few letters in any order find the app.
  */
 export function AppsCard({ refresh = 0 }: { refresh?: number }) {
-  const { bots } = useStore();
   const params = useSearchParams();
   const connected = params.get("connected");
   const [connections, setConnections] = useState<Connection[] | null>(null);
@@ -101,16 +100,19 @@ export function AppsCard({ refresh = 0 }: { refresh?: number }) {
   const byToolkit = new Map(mine.map((c) => [c.toolkit, c]));
   const pages = result?.pages ?? 1;
 
-  /** A row in either list: the app, what it is for, and what you can do about it. */
+  /**
+   * A row in either list: the app, what it is for, and what you can do
+   * about it. A connected app has a second line: which bots may use it,
+   * changed right there for one bot or all of them.
+   */
   function row(toolkit: string, name: string, logo: string | undefined, about: string) {
     const c = byToolkit.get(toolkit);
-    const users = bots.filter((b) => b.toolkits.includes(toolkit)).length;
-    return (
-      <li key={toolkit} className="flex items-center gap-2.5 rounded-xl border px-3 py-2">
+    const head = (
+      <>
         <AppIcon toolkit={toolkit} logo={logo} size={22} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13.5px] font-medium">{name}</span>
-          <span className="block truncate text-[11.5px] text-muted-foreground">{c ? (c.status === "active" ? `Connected · used by ${users}` : c.status === "pending" ? "Finishing sign-in…" : "Failed") : about}</span>
+          <span className="block truncate text-[11.5px] text-muted-foreground">{c ? (c.status === "active" ? "Connected" : c.status === "pending" ? "Finishing sign-in…" : "Failed") : about}</span>
         </span>
         {c ? (
           <span className="flex items-center gap-1.5">
@@ -129,6 +131,16 @@ export function AppsCard({ refresh = 0 }: { refresh?: number }) {
             Connect
           </Button>
         )}
+      </>
+    );
+    if (c?.status !== "active") return <li key={toolkit} className="flex items-center gap-2.5 rounded-xl border px-3 py-2">{head}</li>;
+    return (
+      <li key={toolkit} className="flex flex-col gap-2 rounded-xl border px-3 py-2">
+        <span className="flex items-center gap-2.5">{head}</span>
+        <span className="flex items-center justify-between gap-2 border-t pt-2">
+          <span className="text-[12px] text-muted-foreground">Used by</span>
+          <BotAccessMenu toolkit={toolkit} name={name} />
+        </span>
       </li>
     );
   }
@@ -137,7 +149,7 @@ export function AppsCard({ refresh = 0 }: { refresh?: number }) {
     <Card>
       <CardHeader>
         <CardTitle>Connected apps</CardTitle>
-        <CardDescription>Every app Composio supports is here: search for yours, connect it once, then pick which bots may use it in their profiles. Writes wait for your approval.</CardDescription>
+        <CardDescription>Every app Composio supports is here: search for yours, connect it once, then pick which bots may use it right here. Writes wait for your approval.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {!configured ? (

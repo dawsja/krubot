@@ -119,6 +119,45 @@ export function codexActivity(item, cwd) {
   }
 }
 
+/** The text parts of an MCP tool's answer. */
+function contentText(content) {
+  return (Array.isArray(content) ? content : [])
+    .map((part) => (part?.type === "text" && typeof part.text === "string" ? part.text : part?.type === "image" ? "[image]" : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * One thread item as a step of the work log (the API's WorkStep): begun,
+ * with the whole command or input, or done, with what it printed. Null for
+ * what isn't a step (messages, reasoning, the permission tool).
+ */
+export function codexStep(item, cwd, done) {
+  const title = codexActivity(item, cwd);
+  if (!title || !item?.id || item.type === "agentMessage") return null;
+  const failed = item.status === "failed" || item.status === "declined" || (typeof item.exitCode === "number" && item.exitCode !== 0);
+  switch (item.type) {
+    case "commandExecution":
+      return done
+        ? { id: item.id, output: typeof item.aggregatedOutput === "string" ? item.aggregatedOutput : "", status: failed ? "failed" : "done" }
+        : { id: item.id, kind: "command", title, detail: unwrapCommand(item.command), status: "running" };
+    case "fileChange": {
+      const changes = Array.isArray(item.changes) ? item.changes : [];
+      return done
+        ? { id: item.id, output: changes.map((c) => (typeof c.diff === "string" ? c.diff : "")).filter(Boolean).join("\n") || null, status: failed ? "failed" : "done" }
+        : { id: item.id, kind: "file", title, detail: changes.map((c) => c.path).filter(Boolean).join("\n") || null, status: "running" };
+    }
+    case "mcpToolCall":
+      return done
+        ? { id: item.id, output: item.error?.message ?? contentText(item.result?.content), status: item.error || failed ? "failed" : "done" }
+        : { id: item.id, kind: "tool", title, detail: item.arguments && Object.keys(item.arguments).length ? JSON.stringify(item.arguments, null, 2) : null, status: "running" };
+    case "webSearch":
+      return done ? { id: item.id, status: "done" } : { id: item.id, kind: "tool", title, detail: null, status: "running" };
+    default:
+      return null;
+  }
+}
+
 /** A turn's token use: what the thread's running total grew by. */
 export function usageDelta(before, after) {
   if (!after) return null;
@@ -265,10 +304,14 @@ export class CodexSession extends BridgedSession {
         if (item?.type && item.type !== "userMessage" && item.type !== "reasoning") turn.reply.tool();
         const line = codexActivity(item, this.cwd);
         if (line) turn.onEvent({ type: "activity", line });
+        const step = codexStep(item, this.cwd, false);
+        if (step) turn.onEvent({ type: "step", step });
         return;
       }
       case "item/completed": {
         const item = params?.item;
+        const step = codexStep(item, this.cwd, true);
+        if (step) turn.onEvent({ type: "step", step });
         if (item?.type === "agentMessage" && typeof item.text === "string") {
           turn.reply.block(item.text);
           const line = codexActivity(item, this.cwd);

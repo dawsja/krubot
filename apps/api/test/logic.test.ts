@@ -3,7 +3,8 @@ import { ownPath, ruleFor, ruleMatches, summarize } from "../src/approvals.ts";
 import { fromHome, resolvePath } from "../src/computer.ts";
 import { BOARD_DONE_LIMIT, buildBoard, oneLine } from "../src/board.ts";
 import { exactApp, fuzzyScore, indexApps, pageOf, searchIndex } from "../src/catalog.ts";
-import { activityLine } from "../src/driver.ts";
+import { activityLine, workSteps } from "../src/driver.ts";
+import { clearWork, clipOutput, recordStep, workFor } from "../src/work.ts";
 import { isReadOnlyAction } from "../src/composio.ts";
 import { isViewing, markViewing, VIEWING_TTL_MS } from "../src/presence.ts";
 import { renderSoul } from "../src/souls.ts";
@@ -671,5 +672,42 @@ describe("skill bundles", () => {
     expect(checkBundleFiles([{ path: "big.bin", data: new Uint8Array(6 * 1024 * 1024) }])).toContain("larger than");
     const many = Array.from({ length: 201 }, (_, i) => ({ path: `f${i}.txt`, data: new Uint8Array(1) }));
     expect(checkBundleFiles(many)).toContain("at most");
+  });
+});
+
+describe("work log", () => {
+  test("workSteps starts a step from a tool use and finishes it from its result", () => {
+    const use = JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Bash", input: { command: "ls -la\n  /tmp" } }] } });
+    const [begun] = workSteps(use);
+    expect(begun).toMatchObject({ id: "tu1", kind: "command", title: "$ ls -la /tmp", detail: "ls -la\n  /tmp", status: "running" });
+    const result = JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu1", content: [{ type: "text", text: "total 0" }], is_error: false }] } });
+    expect(workSteps(result)).toEqual([{ id: "tu1", output: "total 0", status: "done" }]);
+    const failed = JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu1", content: "boom", is_error: true }] } });
+    expect(workSteps(failed)[0]?.status).toBe("failed");
+  });
+
+  test("workSteps leaves out the permission tool and bad lines", () => {
+    const permission = JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "p", name: "mcp__kru__permission", input: {} }] } });
+    expect(workSteps(permission)).toEqual([]);
+    expect(workSteps("not json")).toEqual([]);
+  });
+
+  test("recordStep merges updates, and an update to an unknown step is dropped", () => {
+    clearWork("t-work", "b-work");
+    expect(recordStep("t-work", "b-work", { id: "x", output: "orphan" })).toBeNull();
+    recordStep("t-work", "b-work", { id: "s1", kind: "command", title: "$ ls", detail: "ls", status: "running" });
+    const done = recordStep("t-work", "b-work", { id: "s1", output: "a", status: "done" });
+    expect(done).toMatchObject({ id: "s1", title: "$ ls", detail: "ls", output: "a", status: "done" });
+    expect(workFor("t-work")["b-work"]).toHaveLength(1);
+    clearWork("t-work", "b-work");
+    expect(workFor("t-work")).toEqual({});
+  });
+
+  test("clipOutput keeps the start and the end of a long output", () => {
+    const long = `${"a".repeat(50)}${"b".repeat(50)}`;
+    const clipped = clipOutput(long, 20);
+    expect(clipped.startsWith("aaaaa")).toBe(true);
+    expect(clipped.endsWith("b".repeat(15))).toBe(true);
+    expect(clipped).toContain("characters");
   });
 });

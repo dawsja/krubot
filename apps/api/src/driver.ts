@@ -1,5 +1,6 @@
 import type { Engine } from "@krubot/shared";
 import { answerAgentTool, runAgentTurn, type AgentTool, type BoxAccess, type BoxConfig } from "./box.ts";
+import type { StepUpdate } from "./work.ts";
 
 /*
  * The bots' engine: a coding CLI (Claude Code, Codex or Grok) running as a
@@ -47,6 +48,8 @@ export type CliTurn = {
   signal?: AbortSignal;
   /** The CLI's own words and tool uses as they stream, for the activity line. */
   onLog?: (line: string) => void;
+  /** The same, whole, with what each command printed: the work log behind the line. */
+  onStep?: (step: StepUpdate) => void;
 };
 
 export type CliTurnResult = {
@@ -60,38 +63,87 @@ export type CliTurnResult = {
 };
 
 type StreamEvent = { type?: string; message?: { content?: unknown }; parent_tool_use_id?: string | null };
-type ContentBlock = { type?: string; text?: string; name?: string; input?: Record<string, unknown> };
+type ContentBlock = { type?: string; id?: string; text?: string; name?: string; input?: Record<string, unknown>; tool_use_id?: string; content?: unknown; is_error?: boolean };
+
+/** A tool use in one line, as the activity line shows it; null for one nobody should see. */
+function toolTitle(name: string, input: Record<string, unknown>, relative: (file: string) => string): string | null {
+  if (name === "Bash" && typeof input.command === "string") return `$ ${input.command.replace(/\s+/g, " ").slice(0, 160)}`;
+  if (typeof input.file_path === "string") return `${name === "Read" ? "Reading" : name === "Edit" ? "Editing" : name === "Write" ? "Writing" : name} ${relative(input.file_path)}`;
+  if (typeof input.url === "string") return `Opening ${input.url.slice(0, 120)}`;
+  const first = Object.values(input).find((v) => typeof v === "string") as string | undefined;
+  if (name.startsWith("mcp__kru__")) {
+    const tool = name.slice("mcp__kru__".length);
+    if (tool === "permission") return null;
+    return `${tool}${first ? ` ${first.replace(/\s+/g, " ").slice(0, 120)}` : ""}`;
+  }
+  return `${name}${first ? ` ${first.replace(/\s+/g, " ").slice(0, 120)}` : ""}`;
+}
+
+function parseStream(line: string): StreamEvent | null {
+  try {
+    return JSON.parse(line) as StreamEvent;
+  } catch {
+    return null;
+  }
+}
+
+const relativeTo = (home?: string) => (file: string) => (home && file.startsWith(`${home}/`) ? file.slice(home.length + 1) : file);
 
 /** One stream-json line as a short activity line, or nothing. */
 export function activityLine(line: string, home?: string): string[] {
-  let event: StreamEvent;
-  try {
-    event = JSON.parse(line) as StreamEvent;
-  } catch {
-    return [];
-  }
-  if (event.type !== "assistant") return [];
+  const event = parseStream(line);
+  if (event?.type !== "assistant") return [];
   const blocks = Array.isArray(event.message?.content) ? (event.message.content as ContentBlock[]) : [];
   const out: string[] = [];
-  const relative = (file: string) => (home && file.startsWith(`${home}/`) ? file.slice(home.length + 1) : file);
   for (const block of blocks) {
     if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
       out.push(block.text.trim().replace(/\s+/g, " ").slice(0, 200));
     } else if (block.type === "tool_use") {
-      const input = block.input ?? {};
+      const title = toolTitle(block.name ?? "tool", block.input ?? {}, relativeTo(home));
+      if (title) out.push(title);
+    }
+  }
+  return out;
+}
+
+/** What a tool answered, as text: a string, or the text parts of a content list. */
+function resultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return (content as ContentBlock[])
+    .map((part) => (part.type === "text" && typeof part.text === "string" ? part.text : part.type === "image" ? "[image]" : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * One stream-json line as work steps: a tool use starts one (the whole
+ * command or input as its detail), its result finishes it with what it
+ * printed, and what the model says on the way is a note.
+ */
+export function workSteps(line: string, home?: string): StepUpdate[] {
+  const event = parseStream(line);
+  if (event?.type !== "assistant" && event?.type !== "user") return [];
+  const blocks = Array.isArray(event.message?.content) ? (event.message.content as ContentBlock[]) : [];
+  const out: StepUpdate[] = [];
+  for (const block of blocks) {
+    if (event.type === "assistant" && block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+      out.push({ id: `note-${crypto.randomUUID()}`, kind: "note", title: block.text.trim().replace(/\s+/g, " ").slice(0, 200), detail: block.text.trim(), status: "done" });
+    } else if (event.type === "assistant" && block.type === "tool_use" && typeof block.id === "string") {
       const name = block.name ?? "tool";
-      if (name === "Bash" && typeof input.command === "string") out.push(`$ ${input.command.replace(/\s+/g, " ").slice(0, 160)}`);
-      else if (typeof input.file_path === "string") out.push(`${name === "Read" ? "Reading" : name === "Edit" ? "Editing" : name === "Write" ? "Writing" : name} ${relative(input.file_path)}`);
-      else if (typeof input.url === "string") out.push(`Opening ${input.url.slice(0, 120)}`);
-      else if (name.startsWith("mcp__kru__")) {
-        const tool = name.slice("mcp__kru__".length);
-        if (tool === "permission") continue;
-        const first = Object.values(input).find((v) => typeof v === "string") as string | undefined;
-        out.push(`${tool}${first ? ` ${first.replace(/\s+/g, " ").slice(0, 120)}` : ""}`);
-      } else {
-        const first = Object.values(input).find((v) => typeof v === "string") as string | undefined;
-        out.push(`${name}${first ? ` ${first.replace(/\s+/g, " ").slice(0, 120)}` : ""}`);
-      }
+      const input = block.input ?? {};
+      const title = toolTitle(name, input, relativeTo(home));
+      if (!title) continue;
+      const command = name === "Bash" && typeof input.command === "string" ? input.command : null;
+      out.push({
+        id: block.id,
+        kind: command !== null ? "command" : typeof input.file_path === "string" ? "file" : "tool",
+        title,
+        detail: command ?? (Object.keys(input).length ? JSON.stringify(input, null, 2) : null),
+        status: "running",
+      });
+    } else if (event.type === "user" && block.type === "tool_result" && typeof block.tool_use_id === "string") {
+      out.push({ id: block.tool_use_id, output: resultText(block.content), status: block.is_error ? "failed" : "done" });
     }
   }
   return out;
@@ -142,10 +194,13 @@ export async function cliTurn(turn: CliTurn): Promise<CliTurnResult> {
       onEvent: (event) => {
         if (event.type === "tool_call") {
           inflight.push(handleCall(event.callId, event.name, event.input));
-        } else if (event.type === "line" && turn.onLog) {
-          for (const line of activityLine(event.line)) turn.onLog(line);
+        } else if (event.type === "line") {
+          if (turn.onLog) for (const line of activityLine(event.line)) turn.onLog(line);
+          if (turn.onStep) for (const step of workSteps(event.line)) turn.onStep(step);
         } else if (event.type === "activity" && turn.onLog) {
           turn.onLog(event.line);
+        } else if (event.type === "step" && turn.onStep) {
+          turn.onStep(event.step);
         }
       },
     },

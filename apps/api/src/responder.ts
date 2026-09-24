@@ -23,6 +23,7 @@ import { createRedactor } from "./redact.ts";
 import { skillsFor, skillsIndex, skillsReady } from "./skills.ts";
 import { renderSoul, systemPromptFor } from "./souls.ts";
 import { usableBot } from "./toolkits.ts";
+import { clearWork, clipOutput, recordStep, type StepUpdate } from "./work.ts";
 import { appTools, baseTools, loadMemory, loadTeamMemory, MAX_CHAIN, MAX_ROOM_LINES, permissionTool, resultDepth, teamTools, TOOL_NOTES, transcript } from "./tools.ts";
 
 /*
@@ -329,6 +330,7 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message, parent
   const active: Active = { botId: bot.id, threadId: thread.id, userId: thread.userId, messageId: message.id, controller, startedAt: Date.now(), steer: async () => false };
   activeTurns().set(agentId, active);
   const steers = new SteerQueue();
+  clearWork(thread.id, bot.id);
   activity(thread.id, bot.id, "Thinking…");
   const bots = listBots({ includeHidden: true, userId: thread.userId });
   const askBot = async (target: Bot, prompt: string, depth: number): Promise<string> => {
@@ -363,6 +365,15 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message, parent
   const hide = createRedactor(secrets);
   // The same, uncut: a reply is kept whole, however long.
   const scrub = createRedactor(secrets, Infinity);
+  // A work step is read like the line: never a secret, and never longer than the page keeps.
+  const step = (update: StepUpdate) => {
+    recordStep(thread.id, bot.id, {
+      ...update,
+      ...(update.title !== undefined ? { title: hide(update.title) } : {}),
+      ...(update.detail ? { detail: clipOutput(scrub(update.detail)) } : {}),
+      ...(update.output ? { output: scrub(update.output) } : {}),
+    });
+  };
   try {
     // Its home and its SOUL.md, made again if they aren't there: after a
     // reset the computer is empty, and the bot's own account with it.
@@ -416,6 +427,7 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message, parent
           tools,
           signal: controller.signal,
           onLog: (line) => activity(thread.id, bot.id, hide(line)),
+          onStep: step,
           steers,
         }).then((native) => ({ ...native, recovered: false, cost: null }))
       : await cliTurn({
@@ -434,6 +446,7 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message, parent
       timeoutMs: TURN_TIMEOUT_MS,
       signal: controller.signal,
       onLog: (line) => activity(thread.id, bot.id, hide(line)),
+      onStep: step,
     });
     // What the turn used, answered or not: a failed turn still spent tokens.
     recordUsage({ userId: thread.userId, botId: bot.id, threadId: thread.id, engine: run.engine, model: run.model, usage: result.usage, cost: result.cost });
@@ -455,6 +468,7 @@ export async function botTurn(bot: Bot, thread: Thread, message: Message, parent
     parent?.removeEventListener("abort", follow);
     steers.shut();
     activeTurns().delete(agentId);
+    clearWork(thread.id, bot.id);
     activity(thread.id, bot.id, null);
     markAnswered(message.id);
   }

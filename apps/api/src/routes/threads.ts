@@ -5,6 +5,7 @@ import type { Env } from "../app.ts";
 import { getBot, listBots } from "../data/bots.ts";
 import { attachmentOwner, createRoom, deleteRoom, getAttachment, listExchange, listMessages, listThreads, markThreadRead, postMessage, searchMessages, storeAttachment, updateRoom, clearThread } from "../data/threads.ts";
 import { activeTurns, postFromPerson, stopAll, stopThread } from "../responder.ts";
+import { workFor } from "../work.ts";
 
 const MAX_BODY = 20_000;
 
@@ -23,8 +24,16 @@ export function threadsRoutes() {
     const thread = ownThread(c, c.req.param("id"));
     if (!thread) return c.json({ error: "No such conversation" }, 404);
     const bot = thread.botId ? getBot(thread.botId) : null;
-    const busy = [...activeTurns().values()].filter((t) => t.threadId === thread.id).map((t) => t.botId);
-    return c.json({ thread, bot, busy });
+    const turns = [...activeTurns().values()].filter((t) => t.threadId === thread.id);
+    // Which messages those turns are answering: editing one of them stops its turn first, and only then.
+    return c.json({ thread, bot, busy: turns.map((t) => t.botId), answering: turns.map((t) => t.messageId) });
+  });
+
+  // What the bots working here have done so far, step by step, behind their activity lines.
+  app.get("/threads/:id/work", (c) => {
+    const thread = ownThread(c, c.req.param("id"));
+    if (!thread) return c.json({ error: "No such conversation" }, 404);
+    return c.json({ work: workFor(thread.id) });
   });
 
   app.get("/threads/:id/messages", (c) => {

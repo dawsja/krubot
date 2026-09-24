@@ -100,6 +100,41 @@ export function grokActivity(toolCall, cwd) {
   return oneLine(toolCall?.title ?? name, 120) || null;
 }
 
+/** What a Grok tool call printed: its text and diffs, or its raw output. */
+function grokOutput(update) {
+  const parts = (Array.isArray(update?.content) ? update.content : []).map((part) => {
+    if (part?.type === "content" && part.content?.type === "text") return part.content.text;
+    if (part?.type === "diff") return `${part.path ?? ""}\n${part.newText ?? ""}`;
+    return "";
+  });
+  const text = parts.filter(Boolean).join("\n");
+  if (text) return text;
+  const raw = update?.rawOutput;
+  return raw === undefined || raw === null ? null : typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
+}
+
+/**
+ * A tool call Grok announced, or an update to one, as a step of the work
+ * log (the API's WorkStep). An announcement needs a line to show; an
+ * update only says how it ended and what it printed.
+ */
+export function grokStep(update, cwd) {
+  const id = update?.toolCallId;
+  if (!id) return null;
+  const status = update.status === "completed" ? "done" : update.status === "failed" ? "failed" : undefined;
+  if (update.sessionUpdate === "tool_call") {
+    const title = grokActivity(update, cwd);
+    if (!title) return null;
+    const input = update.rawInput && typeof update.rawInput === "object" ? update.rawInput : {};
+    const command = typeof input.command === "string" ? input.command : null;
+    const file = input.path ?? input.file_path ?? input.target_file;
+    return { id, kind: command !== null ? "command" : typeof file === "string" ? "file" : "tool", title, detail: command ?? (Object.keys(input).length ? JSON.stringify(input, null, 2) : null), status: status ?? "running" };
+  }
+  const output = grokOutput(update);
+  if (!status && output === null) return null;
+  return { id, ...(output !== null ? { output } : {}), ...(status ? { status } : {}) };
+}
+
 /** How a permission question reads to the person: Claude Code's tool names, which the approval card knows. */
 export function permissionSubject(toolCall) {
   const input = toolCall?.rawInput && typeof toolCall.rawInput === "object" ? { ...toolCall.rawInput } : {};
@@ -274,6 +309,13 @@ export class GrokSession extends BridgedSession {
           turn.reply.tool();
           const line = grokActivity(update, this.cwd);
           if (line) turn.onEvent({ type: "activity", line });
+          const step = grokStep(update, this.cwd);
+          if (step) turn.onEvent({ type: "step", step });
+          return;
+        }
+        case "tool_call_update": {
+          const step = grokStep(update, this.cwd);
+          if (step) turn.onEvent({ type: "step", step });
           return;
         }
         default:

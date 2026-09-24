@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { claudeAccessEnv, parseAccess } from "../agents.mjs";
 import { permissionDecision } from "../bridge.mjs";
-import { codexActivity, codexApprovalPolicy, codexArgs, codexEnv, codexInput, tomlValue, unwrapCommand, usageDelta } from "../codex.mjs";
-import { acpMcpServers, grokActivity, grokArgs, grokEnv, grokPrompt, permissionOutcome, permissionSubject, withPersona } from "../grok.mjs";
+import { codexActivity, codexApprovalPolicy, codexStep, codexArgs, codexEnv, codexInput, tomlValue, unwrapCommand, usageDelta } from "../codex.mjs";
+import { acpMcpServers, grokActivity, grokStep, grokArgs, grokEnv, grokPrompt, permissionOutcome, permissionSubject, withPersona } from "../grok.mjs";
 import { insideHome, HttpError } from "../server.mjs";
 
 const API = { kind: "api", baseUrl: "http://api:8790/api/llm/openai", token: "tok_abcdefghijklmnop" };
@@ -109,4 +109,27 @@ test("Grok's permission questions read like Claude Code's and answer once", () =
 test("insideHome keeps every CLI's sign-in private", () => {
   for (const dir of [".claude/x", ".codex/auth.json", ".grok/auth.json"]) assert.throws(() => insideHome(dir), HttpError);
   assert.ok(insideHome(".bots/a/notes.md").endsWith("/.bots/a/notes.md"));
+});
+
+test("codexStep starts a command with the whole of it and finishes it with what it printed", () => {
+  const started = { type: "commandExecution", id: "c1", command: "/bin/bash -lc 'ls -la'", status: "inProgress" };
+  const begun = codexStep(started, "/home/agent", false);
+  assert.equal(begun.kind, "command");
+  assert.equal(begun.status, "running");
+  assert.equal(begun.detail, "ls -la");
+  assert.deepEqual(codexStep({ ...started, status: "completed", exitCode: 0, aggregatedOutput: "a\nb" }, "/home/agent", true), { id: "c1", output: "a\nb", status: "done" });
+  assert.equal(codexStep({ ...started, status: "completed", exitCode: 2, aggregatedOutput: "no" }, "/home/agent", true).status, "failed");
+  assert.equal(codexStep({ type: "agentMessage", id: "m", text: "hi" }, "/home/agent", true), null);
+  assert.equal(codexStep({ type: "mcpToolCall", id: "p", server: "kru", tool: "permission", arguments: {} }, "", false), null);
+});
+
+test("grokStep announces a tool call and finishes it from its update", () => {
+  const call = { sessionUpdate: "tool_call", toolCallId: "g1", title: "run", kind: "execute", status: "pending", rawInput: { command: "echo hi" } };
+  const begun = grokStep(call, "/home/agent");
+  assert.equal(begun.kind, "command");
+  assert.equal(begun.detail, "echo hi");
+  assert.equal(begun.status, "running");
+  const done = grokStep({ sessionUpdate: "tool_call_update", toolCallId: "g1", status: "completed", content: [{ type: "content", content: { type: "text", text: "hi" } }] }, "/home/agent");
+  assert.deepEqual(done, { id: "g1", output: "hi", status: "done" });
+  assert.equal(grokStep({ sessionUpdate: "tool_call_update", toolCallId: "g1" }, ""), null);
 });
