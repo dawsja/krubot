@@ -1,0 +1,587 @@
+import type { Database } from "bun:sqlite";
+
+/**
+ * Kru Bot's schema, one entry per version. Tables use a `kru_` prefix so
+ * they never collide with Better Auth's. Never edit a shipped entry; add a
+ * new one.
+ */
+const MIGRATIONS: string[] = [
+  `
+  CREATE TABLE kru_bots (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    voice TEXT NOT NULL DEFAULT '',
+    color TEXT NOT NULL,
+    expression TEXT NOT NULL DEFAULT 'happy',
+    tilt REAL NOT NULL DEFAULT 0,
+    model TEXT NOT NULL,
+    effort TEXT,
+    approval TEXT NOT NULL DEFAULT 'ask' CHECK (approval IN ('ask', 'edits', 'full')),
+    is_chief INTEGER NOT NULL DEFAULT 0,
+    toolkits TEXT NOT NULL DEFAULT '[]',
+    thread_id TEXT NOT NULL,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE kru_threads (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('bot', 'room')),
+    bot_id TEXT,
+    name TEXT NOT NULL DEFAULT '',
+    last_read_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE kru_thread_members (
+    thread_id TEXT NOT NULL REFERENCES kru_threads (id) ON DELETE CASCADE,
+    bot_id TEXT NOT NULL,
+    PRIMARY KEY (thread_id, bot_id)
+  );
+
+  CREATE TABLE kru_messages (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL REFERENCES kru_threads (id) ON DELETE CASCADE,
+    author TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'message' CHECK (kind IN ('message', 'event', 'activity', 'approval')),
+    body TEXT NOT NULL DEFAULT '',
+    attachments TEXT NOT NULL DEFAULT '[]',
+    depth INTEGER NOT NULL DEFAULT 0,
+    approval_id TEXT,
+    from_thread_id TEXT,
+    -- Which process is answering this message, and when it was answered.
+    claimed_by TEXT,
+    answered_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX kru_messages_thread ON kru_messages (thread_id, created_at);
+  CREATE INDEX kru_messages_pending ON kru_messages (answered_at) WHERE answered_at IS NULL AND author IN ('you', 'routine');
+
+  CREATE TABLE kru_attachments (
+    id TEXT PRIMARY KEY,
+    message_id TEXT,
+    name TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE kru_approvals (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    input TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'allowed', 'denied', 'expired')),
+    rule TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+  );
+  CREATE INDEX kru_approvals_pending ON kru_approvals (status, created_at);
+
+  -- "Always allow" rules: a tool (and optionally a command prefix) a bot may
+  -- use without asking again.
+  CREATE TABLE kru_approval_rules (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL,
+    rule TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (bot_id, rule)
+  );
+
+  CREATE TABLE kru_routines (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    cron TEXT NOT NULL,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
+    prompt TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_run_at TEXT,
+    next_run_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE kru_routine_runs (
+    id TEXT PRIMARY KEY,
+    routine_id TEXT NOT NULL REFERENCES kru_routines (id) ON DELETE CASCADE,
+    message_id TEXT,
+    status TEXT NOT NULL DEFAULT 'started',
+    started_at TEXT NOT NULL,
+    finished_at TEXT
+  );
+
+  CREATE TABLE kru_connections (
+    toolkit TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE kru_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    onboarding TEXT NOT NULL DEFAULT '{"done":false,"apps":[],"templates":[]}',
+    concurrency INTEGER,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
+    updated_at TEXT NOT NULL
+  );
+
+  -- Bot-to-bot handoffs: which thread a delegated task reports back to.
+  CREATE TABLE kru_delegations (
+    id TEXT PRIMARY KEY,
+    from_bot_id TEXT NOT NULL,
+    from_thread_id TEXT NOT NULL,
+    to_bot_id TEXT NOT NULL,
+    to_thread_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    brief TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    result TEXT,
+    created_at TEXT NOT NULL,
+    finished_at TEXT
+  );
+  `,
+  // The model and effort every bot uses, chosen once under Settings.
+  `
+  ALTER TABLE kru_settings ADD COLUMN model TEXT;
+  ALTER TABLE kru_settings ADD COLUMN effort TEXT;
+  `,
+  // Your profile picture: one row, the image itself, shown in the sidebar and on your messages.
+  `
+  CREATE TABLE kru_avatar (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    media_type TEXT NOT NULL,
+    data BLOB NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
+  // Skills (one library for every bot), your MCP servers, secrets the bots
+  // use but never see, browser push subscriptions, per-bot notifications,
+  // routines that run a skill, and the nudges a stalled handoff gets.
+  `
+  CREATE TABLE kru_skills (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    instructions TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'written',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE kru_mcp_servers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    transport TEXT NOT NULL CHECK (transport IN ('http', 'stdio')),
+    url TEXT,
+    headers TEXT NOT NULL DEFAULT '{}',
+    command TEXT,
+    args TEXT NOT NULL DEFAULT '[]',
+    env TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    proxy_token TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE kru_secrets (
+    name TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    requested_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE kru_secret_requests (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+  );
+
+  CREATE TABLE kru_push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    user_agent TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+
+  ALTER TABLE kru_bots ADD COLUMN notify INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE kru_routines ADD COLUMN skill_id TEXT;
+  ALTER TABLE kru_delegations ADD COLUMN nudged_at TEXT;
+  ALTER TABLE kru_delegations ADD COLUMN escalated_at TEXT;
+  `,
+  // OAuth for HTTP MCP servers: the registered client and its tokens, encrypted, and where sign-in stands.
+  `
+  ALTER TABLE kru_mcp_servers ADD COLUMN oauth TEXT;
+  ALTER TABLE kru_mcp_servers ADD COLUMN auth_status TEXT NOT NULL DEFAULT 'none';
+  ALTER TABLE kru_mcp_servers ADD COLUMN auth_error TEXT;
+  `,
+  // Two more message kinds: a secret request card and a hidden prompt (the
+  // greeting a new bot answers). SQLite can't widen a CHECK, so the table is
+  // rebuilt; nothing references it by foreign key.
+  `
+  CREATE TABLE kru_messages_next (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL REFERENCES kru_threads (id) ON DELETE CASCADE,
+    author TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'message' CHECK (kind IN ('message', 'event', 'activity', 'approval', 'secret', 'prompt')),
+    body TEXT NOT NULL DEFAULT '',
+    attachments TEXT NOT NULL DEFAULT '[]',
+    depth INTEGER NOT NULL DEFAULT 0,
+    approval_id TEXT,
+    from_thread_id TEXT,
+    claimed_by TEXT,
+    answered_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  INSERT INTO kru_messages_next SELECT id, thread_id, author, kind, body, attachments, depth, approval_id, from_thread_id, claimed_by, answered_at, created_at FROM kru_messages;
+  DROP TABLE kru_messages;
+  ALTER TABLE kru_messages_next RENAME TO kru_messages;
+  CREATE INDEX kru_messages_thread ON kru_messages (thread_id, created_at);
+  CREATE INDEX kru_messages_pending ON kru_messages (answered_at) WHERE answered_at IS NULL AND author IN ('you', 'routine');
+  `,
+  // The AI the bots run on: which CLI (engine) and, per engine, your plan or
+  // an API provider. Provider keys are encrypted like secrets; the box only
+  // ever gets the proxy URL and its token.
+  `
+  CREATE TABLE kru_providers (
+    kind TEXT PRIMARY KEY,
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    proxy_token TEXT NOT NULL,
+    last_check TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  ALTER TABLE kru_settings ADD COLUMN engine TEXT;
+  ALTER TABLE kru_settings ADD COLUMN engines TEXT;
+  `,
+  // A sign-in card: a bot added an MCP server that wants the person to sign
+  // in (approval_id holds the server id). The CHECK widens by a rebuild.
+  `
+  CREATE TABLE kru_messages_next (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL REFERENCES kru_threads (id) ON DELETE CASCADE,
+    author TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'message' CHECK (kind IN ('message', 'event', 'activity', 'approval', 'secret', 'prompt', 'signin')),
+    body TEXT NOT NULL DEFAULT '',
+    attachments TEXT NOT NULL DEFAULT '[]',
+    depth INTEGER NOT NULL DEFAULT 0,
+    approval_id TEXT,
+    from_thread_id TEXT,
+    claimed_by TEXT,
+    answered_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  INSERT INTO kru_messages_next SELECT id, thread_id, author, kind, body, attachments, depth, approval_id, from_thread_id, claimed_by, answered_at, created_at FROM kru_messages;
+  DROP TABLE kru_messages;
+  ALTER TABLE kru_messages_next RENAME TO kru_messages;
+  CREATE INDEX kru_messages_thread ON kru_messages (thread_id, created_at);
+  CREATE INDEX kru_messages_pending ON kru_messages (answered_at) WHERE answered_at IS NULL AND author IN ('you', 'routine');
+  `,
+  // Where an MCP server's sign-in returns: this app, or localhost for providers that only allow local tools.
+  `
+  ALTER TABLE kru_mcp_servers ADD COLUMN oauth_redirect TEXT NOT NULL DEFAULT 'app';
+  UPDATE kru_mcp_servers SET oauth_redirect = 'localhost' WHERE url LIKE 'https://agent.robinhood.com/%';
+  `,
+  // MCP servers are given to bots one by one (mcp:<id> in a bot's toolkits); the ones that exist stay with every bot.
+  `
+  UPDATE kru_bots SET toolkits = (
+    SELECT json_group_array(value) FROM (
+      SELECT value FROM json_each(kru_bots.toolkits)
+      UNION SELECT 'mcp:' || id FROM kru_mcp_servers
+    )
+  );
+  `,
+  // More than one person. Bots, conversations and push subscriptions belong
+  // to a user (the ones from before belong to the admin; auth.ts fills the
+  // column in once it knows who that is). A connected app or an MCP server
+  // is the admin's unless shared with everyone. Pictures are per user. The
+  // OIDC provider people sign in with lives in the settings row.
+  `
+  ALTER TABLE kru_bots ADD COLUMN user_id TEXT;
+  ALTER TABLE kru_threads ADD COLUMN user_id TEXT;
+  ALTER TABLE kru_push_subscriptions ADD COLUMN user_id TEXT;
+  CREATE INDEX kru_bots_user ON kru_bots (user_id);
+  CREATE INDEX kru_threads_user ON kru_threads (user_id);
+  ALTER TABLE kru_connections ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE kru_mcp_servers ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE kru_user_avatars (
+    user_id TEXT PRIMARY KEY,
+    media_type TEXT NOT NULL,
+    data BLOB NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  ALTER TABLE kru_settings ADD COLUMN oidc TEXT;
+  `,
+  // Connected apps, MCP servers and secrets are each person's own, with
+  // their own Composio key: nothing is shared between people any more. The
+  // rows from before are the admin's; adoptOrphans fills in user_id once
+  // it knows who that is. Names are unique per person, not per install.
+  `
+  CREATE TABLE kru_connections_new (
+    user_id TEXT,
+    toolkit TEXT NOT NULL,
+    name TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, toolkit)
+  );
+  INSERT INTO kru_connections_new (user_id, toolkit, name, account_id, status, created_at)
+    SELECT NULL, toolkit, name, account_id, status, created_at FROM kru_connections;
+  DROP TABLE kru_connections;
+  ALTER TABLE kru_connections_new RENAME TO kru_connections;
+
+  CREATE TABLE kru_mcp_servers_new (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    name TEXT NOT NULL,
+    transport TEXT NOT NULL CHECK (transport IN ('http', 'stdio')),
+    url TEXT,
+    headers TEXT NOT NULL DEFAULT '{}',
+    command TEXT,
+    args TEXT NOT NULL DEFAULT '[]',
+    env TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    proxy_token TEXT NOT NULL,
+    oauth TEXT,
+    auth_status TEXT NOT NULL DEFAULT 'none',
+    auth_error TEXT,
+    oauth_redirect TEXT NOT NULL DEFAULT 'app',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, name)
+  );
+  INSERT INTO kru_mcp_servers_new (id, user_id, name, transport, url, headers, command, args, env, enabled, proxy_token, oauth, auth_status, auth_error, oauth_redirect, created_at, updated_at)
+    SELECT id, NULL, name, transport, url, headers, command, args, env, enabled, proxy_token, oauth, auth_status, auth_error, oauth_redirect, created_at, updated_at FROM kru_mcp_servers;
+  DROP TABLE kru_mcp_servers;
+  ALTER TABLE kru_mcp_servers_new RENAME TO kru_mcp_servers;
+
+  CREATE TABLE kru_secrets_new (
+    user_id TEXT,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL,
+    requested_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, name)
+  );
+  INSERT INTO kru_secrets_new (user_id, name, value, requested_by, created_at, updated_at)
+    SELECT NULL, name, value, requested_by, created_at, updated_at FROM kru_secrets;
+  DROP TABLE kru_secrets;
+  ALTER TABLE kru_secrets_new RENAME TO kru_secrets;
+
+  CREATE TABLE kru_composio_keys (
+    user_id TEXT PRIMARY KEY,
+    api_key TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
+
+  /*
+   * A secret request can now fill the person's Composio project key instead
+   * of the secret store, so a bot can set it up from the conversation.
+   */
+  `
+  ALTER TABLE kru_secret_requests ADD COLUMN target TEXT NOT NULL DEFAULT 'secret';
+  `,
+
+  /*
+   * Approval levels are down to two: 'ask' and 'full'. A bot on the old
+   * 'edits' becomes 'ask', the careful one; edits in its own folder never
+   * ask now anyway. The CHECK still allows the old value, which nothing
+   * writes, rather than rebuilding the table to forbid it.
+   */
+  `
+  UPDATE kru_bots SET approval = 'ask' WHERE approval = 'edits';
+  `,
+
+  /*
+   * The AI is each person's own: which CLI their bots run on, their plan
+   * or their API key per CLI, the model and the effort. API providers are
+   * each person's own too, so the table is rebuilt with a user id (the
+   * rows from before are the admin's; adoptOrphans fills user_id in once
+   * it knows who that is, and copies the team-wide engine settings from
+   * kru_settings into the admin's row). Every person has their own account
+   * on the computer, so a plan is their own sign-in there.
+   */
+  `
+  CREATE TABLE kru_user_ai (
+    user_id TEXT PRIMARY KEY,
+    engine TEXT NOT NULL DEFAULT 'claude',
+    engines TEXT NOT NULL DEFAULT '{}',
+    effort TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE kru_providers_new (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    kind TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    proxy_token TEXT NOT NULL UNIQUE,
+    last_check TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, kind)
+  );
+  INSERT INTO kru_providers_new (id, user_id, kind, base_url, api_key, proxy_token, last_check, created_at, updated_at)
+    SELECT 'legacy-' || kind, NULL, kind, base_url, api_key, proxy_token, last_check, created_at, updated_at FROM kru_providers;
+  DROP TABLE kru_providers;
+  ALTER TABLE kru_providers_new RENAME TO kru_providers;
+  CREATE INDEX kru_providers_user ON kru_providers (user_id);
+  `,
+
+  /*
+   * More than one engine at a time: a person signs in to Claude Code and
+   * adds an API key, and the models of both are there to pick from. The
+   * one in use stays in `engine`; `enabled` is the set it is picked from.
+   */
+  `
+  ALTER TABLE kru_user_ai ADD COLUMN enabled TEXT;
+  UPDATE kru_user_ai SET enabled = json_array(engine) WHERE enabled IS NULL;
+  `,
+
+  /*
+   * A bot's reminder to itself: "check back in 45 minutes". The dispatcher
+   * posts a hidden prompt in its conversation when one is due, so a bot
+   * can wait on its teammates without a person to wake it.
+   */
+  `
+  CREATE TABLE kru_follow_ups (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    note TEXT NOT NULL,
+    due_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    fired_at TEXT
+  );
+  CREATE INDEX kru_follow_ups_due ON kru_follow_ups (fired_at, due_at);
+  `,
+
+  /*
+   * Finished cards a person cleared off their board. The board is a view,
+   * so clearing hides a card; the handoff or run it shows stays, and the
+   * bots still see it. A row outlives the board's one-day window a little
+   * and is then dropped.
+   */
+  `
+  CREATE TABLE kru_board_cleared (
+    user_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    cleared_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, item_id)
+  );
+  `,
+
+  /*
+   * A person's message that went into a bot's running turn (steering)
+   * instead of waiting for a turn of its own, so the web can say so.
+   */
+  `
+  ALTER TABLE kru_messages ADD COLUMN steered INTEGER NOT NULL DEFAULT 0;
+  `,
+
+  /*
+   * What each turn used: tokens in and out, and the cost when the engine
+   * reports one (Claude Code does, on a plan too, as what the API would
+   * have charged). One row per turn, the person's own, for Usage.
+   */
+  `
+  CREATE TABLE IF NOT EXISTS kru_usage (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    bot_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    engine TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    input INTEGER NOT NULL DEFAULT 0,
+    output INTEGER NOT NULL DEFAULT 0,
+    cached_input INTEGER NOT NULL DEFAULT 0,
+    cost REAL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS kru_usage_user_time ON kru_usage (user_id, created_at);
+  `,
+
+  /*
+   * Skills are each person's own, and a skill is a folder: SKILL.md (the
+   * row) and its other files (scripts, references, assets) as blobs. Slugs
+   * are unique per person. The library from before belongs to nobody
+   * until adoptOrphans gives it to the admin. `meta` keeps any other
+   * SKILL.md frontmatter (license, allowed-tools…) as it came.
+   */
+  `
+  CREATE TABLE kru_skills_new (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    instructions TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'written',
+    meta TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, slug)
+  );
+  INSERT INTO kru_skills_new (id, user_id, slug, name, description, instructions, source, created_at, updated_at)
+    SELECT id, NULL, slug, name, description, instructions, source, created_at, updated_at FROM kru_skills;
+  DROP TABLE kru_skills;
+  ALTER TABLE kru_skills_new RENAME TO kru_skills;
+  CREATE INDEX IF NOT EXISTS kru_skills_user ON kru_skills (user_id);
+
+  CREATE TABLE IF NOT EXISTS kru_skill_files (
+    skill_id TEXT NOT NULL REFERENCES kru_skills(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    data BLOB NOT NULL,
+    executable INTEGER NOT NULL DEFAULT 0,
+    text INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (skill_id, path)
+  );
+  `,
+  // A handoff given out while working on another names that one as its
+  // parent, and a finished handoff remembers the message its result came
+  // back as, so the teammate's handoff stays open until its own are in.
+  `
+  ALTER TABLE kru_delegations ADD COLUMN parent_id TEXT;
+  ALTER TABLE kru_delegations ADD COLUMN result_message_id TEXT;
+  CREATE INDEX kru_delegations_parent ON kru_delegations (parent_id) WHERE parent_id IS NOT NULL;
+  CREATE INDEX kru_delegations_result ON kru_delegations (result_message_id) WHERE result_message_id IS NOT NULL;
+  `,
+];
+
+export function runMigrations(db: Database) {
+  db.exec("CREATE TABLE IF NOT EXISTS kru_schema (version INTEGER NOT NULL)");
+  const row = db.query("SELECT MAX(version) AS v FROM kru_schema").get() as { v: number | null } | null;
+  let version = row?.v ?? 0;
+  while (version < MIGRATIONS.length) {
+    const sql = MIGRATIONS[version]!;
+    db.transaction(() => {
+      db.exec(sql);
+      db.query("INSERT INTO kru_schema (version) VALUES (?)").run(version + 1);
+    })();
+    version += 1;
+  }
+  return version;
+}

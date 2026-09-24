@@ -1,0 +1,15 @@
+{
+  "name": "@krubot/android",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Kru Bot for Android: Connect to your Kru Bot, then the web app in a native shell with notifications, file sharing and downloads.",
+  "license": "MIT",
+  "scripts": {
+    "dist:android": "gradle assembleRelease",
+    "dist:android:debug": "gradle assembleDebug",
+    "test:android": "gradle testReleaseUnitTest",
+    "lint": "node scripts/check.mjs",
+    "typecheck": "echo 'android: typechecked by Gradle, see test:android'",
+    "test": "echo 'android: unit tests run in Gradle, see test:android'"
+  }
+}

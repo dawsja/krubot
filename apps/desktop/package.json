@@ -1,0 +1,23 @@
+{
+  "name": "@krubot/desktop",
+  "private": true,
+  "productName": "Kru Bot",
+  "version": "0.1.0",
+  "description": "Kru Bot for Windows and Linux: the web app in its own window, pointed at your Kru Bot.",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/main.mjs",
+  "desktopName": "kru-bot.desktop",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "test": "node --test test/*.test.mjs",
+    "lint": "node --check src/main.mjs && node --check src/server-url.mjs && node --check src/preload.cjs && node --check src/connect.js",
+    "typecheck": "node --check src/main.mjs"
+  },
+  "devDependencies": {
+    "electron": "44.4.2",
+    "electron-builder": "26.15.3"
+  }
+}

@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">Kru Bot</string>
+    <string name="connect_eyebrow">Connect</string>
+    <string name="connect_title">Where is your Kru Bot?</string>
+    <string name="connect_description">Enter the address you open Kru Bot at in your browser.</string>
+    <string name="connect_address">Address</string>
+    <string name="connect_placeholder">https://kru.example.com</string>
+    <string name="connect_button">Connect</string>
+    <string name="connect_busy">Connecting…</string>
+    <string name="connect_back">Back to %1$s</string>
+    <string name="connect_no_answer">No Kru Bot answered at that address. Check it, and that Kru Bot is running.</string>
+    <string name="connect_unreachable">Couldn\'t reach %1$s (%2$s).</string>
+    <string name="connect_error_empty">Enter the address of your Kru Bot.</string>
+    <string name="connect_error_invalid">That doesn\'t look like an address. Try something like https://kru.example.com.</string>
+    <string name="connect_error_scheme">The address has to start with http:// or https://.</string>
+    <string name="connect_error_credentials">Leave the username and password out of the address.</string>
+    <string name="connect_error_generic">Something went wrong. Try again.</string>
+    <string name="download_started">Downloading %1$s</string>
+    <string name="no_app_for_link">Nothing on this phone can open that link.</string>
+    <string name="notifications_channel">Bots</string>
+    <string name="notifications_channel_description">When a bot finishes a job for you or needs your input.</string>
+</resources>
